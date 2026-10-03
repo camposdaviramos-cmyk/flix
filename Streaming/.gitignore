@@ -1,0 +1,7 @@
+.packages/
+__pycache__/
+data/
+test-results/
+.env
+.venv/
+*.pyc

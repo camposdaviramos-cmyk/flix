@@ -1,0 +1,16 @@
+[Unit]
+Description=Flix streaming website
+After=network.target
+[Service]
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/opt/flix/Streaming
+Environment=PYTHONPATH=/opt/flix/Streaming
+ExecStart=/opt/flix/venv/bin/python /opt/flix/serve.py
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+UMask=0077
+[Install]
+WantedBy=multi-user.target
