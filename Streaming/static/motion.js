@@ -152,7 +152,7 @@
       atmosphere.setAttribute('aria-hidden', 'true');
       atmosphere.innerHTML = '<div class="vx-orbit"></div><div class="vx-beam"></div><canvas class="vx-starfield"></canvas>';
       this.hero.prepend(atmosphere);
-      this.hero.insertAdjacentHTML('beforeend', '<div class="vx-hero-line" aria-hidden="true"></div><div class="vx-coordinate" aria-hidden="true"><span>VYRA ORIGINAL EXPERIENCE</span><strong>01 — ∞</strong></div><div class="vx-orbital-label" aria-hidden="true">ALÉM DO SEU UNIVERSO</div><div class="vx-explore-cue" aria-hidden="true"><i class="vx-mouse"></i><span>EXPLORE. SINTA. DÊ PLAY.</span></div>');
+      this.hero.insertAdjacentHTML('beforeend', '<div class="vx-hero-line" aria-hidden="true"></div><div class="vx-coordinate" aria-hidden="true"><span>FLIX ORIGINAL EXPERIENCE</span><strong>01 — ∞</strong></div><div class="vx-orbital-label" aria-hidden="true">ALÉM DO SEU UNIVERSO</div><div class="vx-explore-cue" aria-hidden="true"><i class="vx-mouse"></i><span>EXPLORE. SINTA. DÊ PLAY.</span></div>');
       this.canvas = select('canvas', atmosphere);
       this.ctx = this.canvas.getContext('2d', { alpha: true });
       this.particles = Array.from({ length: innerWidth < 650 ? 54 : 140 }, (_, i) => ({

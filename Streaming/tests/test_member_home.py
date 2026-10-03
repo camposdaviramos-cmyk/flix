@@ -26,6 +26,7 @@ class MemberTests(unittest.TestCase):
   self.login();movie=self.db.execute("SELECT id FROM content WHERE kind='movie' LIMIT 1").fetchone()[0]
   self.c.get('/api/play/'+movie);r=self.c.put('/api/progress/'+movie,json={'position':18.5,'duration':150,'client_time':time.time()*1000},headers=self.headers);self.assertEqual(r.status_code,200)
   self.assertEqual(self.c.get('/api/library').json['progress'][0]['position'],18.5)
+  recent=self.c.get('/api/library').json['recent_watched'];self.assertEqual(recent[0]['content_id'],movie);self.c.get('/api/play/channel-test');self.assertEqual([x['content_id'] for x in self.c.get('/api/library').json['recent_watched']],[ 'channel-test',movie])
   for path in ['/continuar','/planos','/filmes?view=featured','/series?view=top','/tv?view=recent']:self.assertEqual(self.c.get(path).status_code,200,path)
   self.assertEqual(self.c.get('/continuar').headers['X-Robots-Tag'],'noindex, nofollow')
 if __name__=='__main__':unittest.main()

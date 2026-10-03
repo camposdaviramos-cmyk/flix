@@ -11,6 +11,7 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 import room_lifecycle
 import social_hub
+import notification_payload
 
 
 def key_path(folder):
@@ -40,12 +41,13 @@ def deliver(db,folder,send=None):
         pending_call=n['dedupe'].startswith('call:') if n['dedupe'] else False
         call=db.execute('SELECT status,created_at FROM hub_calls WHERE id=?',(n['dedupe'][5:],)).fetchone() if pending_call else None
         expired=pending_call and (not call or call['status']!='ringing' or call['created_at']<time.time()-45)
-        if n['read_at'] or expired or not pref.get(n['category'],True) or n['created_at']<time.time()-86400:
+        if n['read_at'] or expired or not notification_payload.available(db,n) or not pref.get(n['category'],True) or n['created_at']<time.time()-86400:
             db.execute("UPDATE hub_deliveries SET status='skipped' WHERE notification_id=? AND subscription_id=?",key);db.commit();continue
         row=db.execute("UPDATE hub_deliveries SET status='sending',attempts=attempts+1 WHERE notification_id=? AND subscription_id=? AND status='pending'",key);db.commit()
         if not row.rowcount:continue
         count=db.execute('SELECT COUNT(*) FROM hub_notifications WHERE user_id=? AND read_at IS NULL',(n['user_id'],)).fetchone()[0]
-        payload={'title':n['title'],'body':n['body'],'url':n['href'],'tag':'flix-'+str(n['id']),'id':n['id'],'badge':count,'call':pending_call,'silent':not pref['sounds'],'expires':int(n['created_at']+45) if pending_call else None}
+        payload=notification_payload.build(db,n,pref)
+        payload.update(badge=count,silent=not pref['sounds'])
         setting=db.execute("SELECT value FROM settings WHERE key='public_url'").fetchone();subject=(setting[0] if setting and setting[0].startswith('https://') else 'https://flix.devspacey.com').rstrip('/')
         try:
             send(subscription_info={'endpoint':n['endpoint'],'keys':{'p256dh':n['p256dh'],'auth':n['auth']}},data=json.dumps(payload),vapid_private_key=str(key_path(folder)),vapid_claims={'sub':subject},ttl=max(1,int(n['created_at']+45-time.time())) if pending_call else 3600,timeout=8)
@@ -61,7 +63,7 @@ def register(app):
     root=Path(app.static_folder)
     @app.get('/sw.js')
     def worker_script():
-        r=send_file(root/'sw.js',mimetype='application/javascript',max_age=0);r.headers['Service-Worker-Allowed']='/';r.headers['Cache-Control']='no-cache';return r
+        r=send_file(root/'sw.js',mimetype='application/javascript',max_age=0);r.headers['Service-Worker-Allowed']='/';r.headers['Cache-Control']='private, no-store, no-cache, max-age=0, must-revalidate';r.headers['CDN-Cache-Control']='no-store';return r
     @app.get('/manifest.webmanifest')
     def manifest():return send_file(root/'manifest.webmanifest',mimetype='application/manifest+json',max_age=300)
     if app.config['TESTING']:return

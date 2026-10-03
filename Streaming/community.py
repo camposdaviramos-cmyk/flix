@@ -16,6 +16,11 @@ import community_social
 import community_publishing
 import room_lifecycle
 import social_hub
+import community_experience
+import social_spaces
+import flix_music
+import flix_wallet
+import room_experience
 
 
 def migrate(db):
@@ -61,6 +66,11 @@ def migrate(db):
     community_publishing.migrate(db)
     room_lifecycle.migrate(db)
     social_hub.migrate(db)
+    community_experience.migrate(db)
+    social_spaces.migrate(db)
+    flix_music.migrate(db)
+    flix_wallet.migrate(db)
+    room_experience.migrate(db)
 
 
 def external_url(value, error, media=False, optional=False):
@@ -87,6 +97,7 @@ def external_url(value, error, media=False, optional=False):
         if not re.fullmatch(r'[a-zA-Z0-9_-]{11}',vid):
             raise error('Informe o link de um vídeo do YouTube.')
         return 'https://www.youtube.com/watch?v='+vid,'youtube'
+    if flix_music.sc_url(value):return value,'soundcloud'
     ext=p.path.lower().rsplit('.',1)[-1]
     kind={'m3u8':'hls','mp4':'video','webm':'video','mp3':'audio','ogg':'audio','m4a':'audio','wav':'audio'}.get(ext,'link')
     if media and kind=='link':
@@ -134,29 +145,43 @@ def register_community(app, db, auth, data, error):
         db().execute('INSERT INTO community_audit(admin_id,action,target,created_at) VALUES(?,?,?,?)',(uid(),action,target,time.time()))
 
     def person(user):
-        return db().execute("SELECT u.id,u.name,u.username,u.created_at,COALESCE(p.avatar,'') avatar,COALESCE(p.bio,'') bio,COALESCE(p.cover,'') cover,COALESCE(p.favorite_genres,'') favorite_genres,COALESCE(p.location,'') location,COALESCE(p.website,'') website FROM users u LEFT JOIN community_profiles p ON p.user_id=u.id WHERE u.id=? AND u.status='active'",(user,)).fetchone()
+        return db().execute("SELECT u.id,u.name,u.username,u.verified,u.created_at,COALESCE(p.avatar,'') avatar,COALESCE(p.bio,'') bio,COALESCE(p.cover,'') cover,COALESCE(p.favorite_genres,'') favorite_genres,COALESCE(p.location,'') location,COALESCE(p.website,'') website FROM users u LEFT JOIN community_profiles p ON p.user_id=u.id WHERE u.id=? AND u.status='active'",(user,)).fetchone()
 
     def post(pid,owner=False):
         r=db().execute("SELECT p.* FROM community_posts p JOIN users u ON u.id=p.user_id WHERE p.id=? AND u.status='active'",(pid,)).fetchone()
-        if not r or (r['status']!='published' and not(owner and (r['user_id']==uid() or g.user['role']=='admin'))):
+        if not r or (r['status']!='published' and not((r['status'] in ('private','archived') or owner) and (r['user_id']==uid() or g.user['role']=='admin'))):
             raise error('Publicação não encontrada.',404)
+        if r['space_id']:
+            sp=db().execute("SELECT privacy,status FROM social_spaces WHERE id=?",(r['space_id'],)).fetchone()
+            if not sp or sp['status']!='active' or (sp['privacy']=='private' and not social_spaces.space_role(db(),r['space_id'],uid()) and g.user['role']!='admin'):raise error('Publicação indisponível.',404)
         return r
 
-    def post_list(where='1',args=(),offset=0):
-        result=rows(f"""SELECT p.*,u.name,u.username,COALESCE(pr.avatar,'') avatar,
+    def post_list(where='1',args=(),offset=0,include_own=False,order=None):
+        visibility="(p.status='published' OR (p.user_id=? AND p.status IN ('private','archived')))" if include_own else "p.status='published'"
+        extra=(uid(),) if include_own else ()
+        if include_own and g.user['role']=='admin':visibility="p.status IN ('published','private','archived')";extra=()
+        sorting='CASE p.id '+ ' '.join('WHEN ? THEN '+str(i) for i in range(len(order)))+' ELSE 10000 END' if order else 'p.featured DESC,p.created_at DESC,p.id'
+        sort_args=tuple(order or [])
+        space_visibility="(p.space_id IS NULL OR EXISTS(SELECT 1 FROM social_spaces ss WHERE ss.id=p.space_id AND ss.status='active' AND (ss.privacy='public' OR EXISTS(SELECT 1 FROM social_space_members sm WHERE sm.space_id=ss.id AND sm.user_id=?))))"
+        space_args=(uid(),)
+        if g.user['role']=='admin' and include_own:space_visibility='1';space_args=()
+        result=rows(f"""SELECT p.*,u.name,u.username,u.verified,COALESCE(pr.avatar,'') avatar,
         (SELECT COUNT(*) FROM community_likes l WHERE l.post_id=p.id) likes,
         (SELECT COUNT(*) FROM community_views v WHERE v.post_id=p.id) views,
-        (SELECT COUNT(*) FROM community_comments c WHERE c.post_id=p.id) comments,
+        (SELECT COUNT(*) FROM community_comments c WHERE c.post_id=p.id AND c.hidden=0) comments,
         (SELECT ROUND(AVG(score),1) FROM community_ratings r JOIN users ru ON ru.id=r.user_id WHERE r.post_id=p.id AND ru.status='active') rating,
         (SELECT COUNT(*) FROM community_ratings r JOIN users ru ON ru.id=r.user_id WHERE r.post_id=p.id AND ru.status='active') rating_count,
         (SELECT score FROM community_ratings WHERE post_id=p.id AND user_id=?) my_rating,
         EXISTS(SELECT 1 FROM community_follows WHERE following=p.user_id AND follower=?) is_following,
         EXISTS(SELECT 1 FROM community_likes l WHERE l.post_id=p.id AND l.user_id=?) liked
         FROM community_posts p JOIN users u ON u.id=p.user_id LEFT JOIN community_profiles pr ON pr.user_id=u.id
-        WHERE p.status='published' AND u.status='active' AND ({where}) ORDER BY p.featured DESC,p.created_at DESC,p.id LIMIT 21 OFFSET ?""",(uid(),uid(),uid(),*args,offset))
+        WHERE {visibility} AND u.status='active' AND {space_visibility} AND ({where}) ORDER BY {sorting} LIMIT 21 OFFSET ?""",(uid(),uid(),uid(),*extra,*space_args,*args,*sort_args,offset))
         for p in result:
             p['reactions']=community_social.reaction_state(db(),'post',p['id'],uid())
             community_publishing.enrich(db(),p)
+            community_experience.enrich(db(),p,uid())
+            social_spaces.enrich(db(),p)
+            p['music']=flix_music.track_for_post(db(),p)
         return result
 
     def room(rid,member=False,host=False):
@@ -175,7 +200,7 @@ def register_community(app, db, auth, data, error):
 
     def snapshot(rid):
         clean_seats(rid)
-        r=dict(room(rid,True))
+        r=room_experience.public(room(rid,True))
         r['server_time']=time.time();r['seat_limit']=4 if r['kind']=='live' else 8
         host_member=db().execute("SELECT seen_at,status FROM community_members WHERE room_id=? AND user_id=?",(rid,r['host_id'])).fetchone()
         r['host_online']=bool(host_member and host_member['status']=='joined' and host_member['seen_at']>time.time()-45)
@@ -183,15 +208,23 @@ def register_community(app, db, auth, data, error):
             end=min(time.time(),host_member['seen_at']+45) if host_member else time.time()
             r['position']+=max(0,end-r['updated_at']);r['paused']=1;r['updated_at']=time.time();r['revision']+=1
             db().execute('UPDATE community_rooms SET position=?,paused=1,updated_at=?,revision=? WHERE id=?',(r['position'],r['updated_at'],r['revision'],rid))
-        r['members']=rows("SELECT u.id,u.name,u.username,COALESCE(p.avatar,'') avatar,m.mic,m.camera,m.seat,m.mic_blocked,m.stage_request,m.stage_at FROM community_members m JOIN users u ON u.id=m.user_id LEFT JOIN community_profiles p ON p.user_id=u.id WHERE m.room_id=? AND m.status='joined' AND m.seen_at>? AND u.status='active' ORDER BY m.joined_at,u.id",(rid,time.time()-45))
+        r['members']=rows("SELECT u.id,u.name,u.username,u.verified,COALESCE(p.avatar,'') avatar,m.mic,m.camera,m.seat,m.mic_blocked,m.stage_request,m.stage_at FROM community_members m JOIN users u ON u.id=m.user_id LEFT JOIN community_profiles p ON p.user_id=u.id WHERE m.room_id=? AND m.status='joined' AND m.seen_at>? AND u.status='active' ORDER BY m.joined_at,u.id",(rid,time.time()-45))
         r['requests']=rows("SELECT u.id,u.name,u.username FROM community_members m JOIN users u ON u.id=m.user_id WHERE m.room_id=? AND m.status='pending' AND m.seen_at>? AND u.status='active' ORDER BY m.joined_at",(rid,time.time()-120)) if r['host_id']==uid() else []
-        r['messages']=rows('SELECT m.id,m.user_id,u.name,u.username,m.body,m.created_at FROM community_messages m JOIN users u ON u.id=m.user_id WHERE room_id=? ORDER BY m.id DESC LIMIT 60',(rid,))[::-1]
+        r['messages']=rows('SELECT m.id,m.user_id,u.name,u.username,u.verified,m.body,m.created_at FROM community_messages m JOIN users u ON u.id=m.user_id WHERE room_id=? ORDER BY m.id DESC LIMIT 60',(rid,))[::-1]
+        for message in r['messages']:
+            message['reactions']=community_social.reaction_state(db(),'message',str(message['id']),uid())
         r['queue']=rows('SELECT * FROM community_queue WHERE room_id=? ORDER BY id LIMIT 100',(rid,))
         return r
 
     @app.get('/api/community/feed')
     @auth()
     def community_feed():
+        sid=request.args.get('space')
+        if sid:
+            sp=db().execute("SELECT * FROM social_spaces WHERE (id=? OR username=?) AND status='active'",(sid,sid)).fetchone()
+            if not sp or (sp['privacy']=='private' and not social_spaces.space_role(db(),sp['id'],uid())):raise error('Espaço indisponível.',404)
+            items=post_list('p.space_id=?',(sp['id'],),max(0,int(request.args.get('offset',0))))
+            return jsonify(posts=items[:20],more=len(items)>20)
         kind=request.args.get('kind','all');q=request.args.get('q','')[:100];offset=max(0,min(10000,int(request.args.get('offset',0))))
         where=['1'];args=[]
         if kind=='following':
@@ -202,7 +235,17 @@ def register_community(app, db, auth, data, error):
             where.append('(p.title LIKE ? OR p.body LIKE ? OR u.username LIKE ?)');args += ['%'+q+'%']*3
         if request.args.get('user'):
             where.append('u.username=?');args.append(request.args['user'])
-        result=post_list(' AND '.join(where),args,offset)
+        own=bool(request.args.get('mine'))
+        if own:
+            status=request.args.get('status','published')
+            if status not in ('published','private','archived'):raise error('Filtro inválido.')
+            where.extend(['p.user_id=?','p.status=?']);args.extend([uid(),status])
+        order=None
+        if kind=='all' and not q and not request.args.get('user') and not own:
+            order=community_experience.recommendation_order(db(),uid())
+            if not order:return jsonify(posts=[],more=False)
+            where.append('p.id IN ('+','.join('?' for _ in order)+')');args.extend(order)
+        result=post_list(' AND '.join(where),args,offset,include_own=own,order=order)
         return jsonify(posts=result[:20],more=len(result)>20)
 
     @app.route('/api/community/posts',methods=['POST'])
@@ -210,7 +253,7 @@ def register_community(app, db, auth, data, error):
     @auth()
     def community_post(pid=None):
         if request.method=='GET':
-            post(pid);return jsonify(post=post_list('p.id=?',(pid,))[0],comments=rows("SELECT c.*,u.name,u.username,COALESCE(p.avatar,'') avatar FROM community_comments c JOIN users u ON u.id=c.user_id LEFT JOIN community_profiles p ON p.user_id=u.id WHERE post_id=? ORDER BY c.id DESC LIMIT 100",(pid,))[::-1])
+            p=post(pid);return jsonify(post=post_list('p.id=?',(pid,),include_own=True)[0],comments=community_experience.visible_comments(db(),p,uid()))
         tx()
         old=post(pid,True) if pid else None
         if old and old['user_id']!=uid() and g.user['role']!='admin':
@@ -219,13 +262,21 @@ def register_community(app, db, auth, data, error):
             db().execute("UPDATE community_posts SET status='removed' WHERE id=?",(pid,))
         else:
             d=data();kind=d.get('kind')
+            sid=d.get('space_id',old['space_id'] if old else None)
+            if old and sid!=old['space_id']:raise error('Edite a publicação no espaço em que ela foi criada.')
+            if sid:social_spaces.post_permission(db(),sid,uid(),error)
             if kind not in ('movie','series','channel','news','discussion','music','reel'):
                 raise error('Tipo de publicação inválido.')
             title,body=text(d,'title',160,2),text(d,'body',6000)
+            genre=episodes=None
+            if kind in ('movie','series') and ('genre' in d or 'episodes' in d):
+                d['id']=pid;genre,d['url'],episodes=community_experience.validate_catalog(db(),d,error,external_url)
+            comp=community_experience.composition(db(),d['composition'],error,external_url,uid()) if d.get('composition') is not None else None
+            if comp is not None and kind!='reel':raise error('Use o editor de reels para esta composição.')
             meta,assets=community_publishing.validate(d,db(),error,external_url) if 'document' in d else (None,[])
             source=d.get('url') or next((b['url'] for b in (meta or {}).get('document',[]) if b['type'] in ('video','audio')),'')
-            url,media=content_url(source,error,media=kind in ('movie','series','channel','music','reel'),optional=kind in ('news','discussion'))
-            if kind=='reel' and media not in ('video','youtube'):raise error('Reels aceitam vídeo enviado, MP4, WebM ou YouTube.')
+            url,media=(comp['items'][0]['url'] if comp['items'] else '', 'composition') if comp is not None else content_url(source,error,media=kind in ('movie','series','channel','music','reel'),optional=kind in ('news','discussion'))
+            if kind=='reel' and media not in ('video','youtube','composition'):raise error('Reels aceitam vídeo enviado, MP4, WebM ou YouTube.')
             poster,_=content_url(d.get('poster'),error,optional=True)
             community_social.retain_assets(db(),url,poster)
             if old:
@@ -233,7 +284,18 @@ def register_community(app, db, auth, data, error):
             else:
                 limit('community_posts','user_id=?',(uid(),),15,3600)
                 pid=secrets.token_urlsafe(9)
-                db().execute('INSERT INTO community_posts(id,user_id,kind,title,body,url,media_type,poster,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)',(pid,uid(),kind,title,body,url,media,poster,time.time(),time.time()))
+                db().execute('INSERT INTO community_posts(id,user_id,kind,title,body,url,media_type,poster,created_at,updated_at,space_id) VALUES(?,?,?,?,?,?,?,?,?,?,?)',(pid,uid(),kind,title,body,url,media,poster,time.time(),time.time(),sid))
+            if d.get('music_id'):
+                mt=db().execute('SELECT * FROM music_tracks WHERE id=?',(d['music_id'],)).fetchone()
+                if not mt or kind!='music' or mt['url']!=url:raise error('Música inválida.')
+                db().execute('UPDATE community_posts SET music_id=? WHERE id=?',(mt['id'],pid))
+            if sid:db().execute('UPDATE community_posts SET space_id=? WHERE id=?',(sid,pid))
+            if genre is not None:
+                db().execute('UPDATE community_posts SET genre=? WHERE id=?',(genre,pid))
+                db().execute('DELETE FROM community_episodes WHERE post_id=?',(pid,))
+                for e in episodes:db().execute('INSERT INTO community_episodes VALUES(?,?,?,?,?,?)',(e['id'],pid,e['season'],e['number'],e['title'],e['url']))
+            if comp is not None:community_experience.save_composition(db(),'post',pid,comp)
+            db().execute('DELETE FROM community_feed_order WHERE user_id=?',(uid(),))
             if meta is not None:community_publishing.save(db(),pid,meta,assets)
             if d.get('draft_id'):db().execute('DELETE FROM community_drafts WHERE id=? AND user_id=?',(str(d['draft_id']),uid()))
         db().commit();return jsonify(id=pid,ok=True),201 if not old else 200
@@ -267,7 +329,7 @@ def register_community(app, db, auth, data, error):
     @auth()
     def community_view(pid):
         tx();p=post(pid)
-        if p['media_type'] not in ('youtube','hls','video','audio'):
+        if p['media_type'] not in ('youtube','hls','video','audio','composition'):
             raise error('Esta publicação não contém mídia.')
         db().execute('INSERT OR IGNORE INTO community_views VALUES(?,?,?)',(pid,uid(),time.time()));db().commit()
         return jsonify(ok=True)
@@ -275,9 +337,11 @@ def register_community(app, db, auth, data, error):
     @app.post('/api/community/posts/<pid>/comments')
     @auth()
     def community_comment(pid):
-        body=text(data(),'body',1500,1);tx();post(pid)
+        body=text(data(),'body',1500,1);tx();p=post(pid)
+        if p['comments_disabled']:raise error('O autor desativou os comentários desta publicação.',403)
         limit('community_comments','user_id=?',(uid(),),12,60)
-        db().execute('INSERT INTO community_comments(post_id,user_id,body,created_at) VALUES(?,?,?,?)',(pid,uid(),body,time.time()));db().commit()
+        cid=db().execute('INSERT INTO community_comments(post_id,user_id,body,created_at) VALUES(?,?,?,?)',(pid,uid(),body,time.time())).lastrowid
+        community_experience.notify_mentions(db(),cid,p,body,uid());db().commit()
         return jsonify(ok=True),201
 
     @app.delete('/api/community/comments/<int:cid>')
@@ -285,7 +349,8 @@ def register_community(app, db, auth, data, error):
     def community_comment_delete(cid):
         tx();c=db().execute('SELECT * FROM community_comments WHERE id=?',(cid,)).fetchone()
         if not c:raise error('Comentário não encontrado.',404)
-        if c['user_id']!=uid() and g.user['role']!='admin':raise error('Acesso restrito.',403)
+        p=post(c['post_id'],True)
+        if c['user_id']!=uid() and p['user_id']!=uid() and g.user['role']!='admin':raise error('Acesso restrito.',403)
         db().execute('DELETE FROM community_comments WHERE id=?',(cid,));db().commit();return jsonify(ok=True)
 
     @app.get('/api/community/profiles/<username>')
@@ -305,6 +370,7 @@ def register_community(app, db, auth, data, error):
         seen=db().execute('SELECT seen_at FROM community_online WHERE user_id=?',(oid,)).fetchone()
         p.update(social_hub.profile_activity(db(),oid,uid()))
         p['game_points'],p['games_played'],p['wins']=db().execute('SELECT COALESCE(SUM(points),0),COUNT(*),COALESCE(SUM(won),0) FROM community_game_results WHERE user_id=?',(oid,)).fetchone()
+        p.update(flix_wallet.profile(db(),oid,uid()))
         return jsonify(profile=p)
 
     @app.patch('/api/community/profile')
@@ -351,19 +417,19 @@ def register_community(app, db, auth, data, error):
     @auth()
     def community_people():
         query='%'+request.args.get('q','')[:100].strip().lstrip('@')+'%'
-        return jsonify(people=rows("SELECT u.id,u.name,u.username,COALESCE(p.avatar,'') avatar FROM users u LEFT JOIN community_profiles p ON p.user_id=u.id WHERE u.status='active' AND (u.username LIKE ? OR u.name LIKE ?) ORDER BY u.name LIMIT 30",(query,query)))
+        return jsonify(people=rows("SELECT u.id,u.name,u.username,u.verified,COALESCE(p.avatar,'') avatar FROM users u LEFT JOIN community_profiles p ON p.user_id=u.id WHERE u.status='active' AND (u.username LIKE ? OR u.name LIKE ?) ORDER BY u.name LIMIT 30",(query,query)))
 
     @app.get('/api/community/discover')
     @auth()
     def community_discover():
-        people=rows("""SELECT u.id,u.name,u.username,COALESCE(pr.avatar,'') avatar,
+        people=rows("""SELECT u.id,u.name,u.username,u.verified,COALESCE(pr.avatar,'') avatar,
         (SELECT COUNT(*) FROM community_likes l JOIN community_posts p ON p.id=l.post_id WHERE p.user_id=u.id AND p.status='published')*5+
         (SELECT COUNT(*) FROM community_views v JOIN community_posts p ON p.id=v.post_id WHERE p.user_id=u.id AND p.status='published' AND v.user_id!=u.id)*2+
         (SELECT COUNT(*) FROM community_follows f WHERE f.following=u.id)+
         (SELECT COUNT(*) FROM community_reactions r JOIN community_posts p ON p.id=r.target_id WHERE r.target_type='post' AND p.user_id=u.id AND r.user_id!=u.id AND p.status='published')*2+
         (SELECT COALESCE(SUM(points),0) FROM community_game_results WHERE user_id=u.id) score
         FROM users u LEFT JOIN community_profiles pr ON pr.user_id=u.id WHERE u.status='active' ORDER BY score DESC,u.created_at LIMIT 30""")
-        top=rows("SELECT p.id,p.title,p.poster,p.kind,u.username,COUNT(v.user_id) views FROM community_posts p JOIN users u ON u.id=p.user_id JOIN community_views v ON v.post_id=p.id WHERE p.status='published' AND u.status='active' AND p.kind IN ('movie','series','channel') GROUP BY p.id ORDER BY views DESC,p.created_at DESC LIMIT 10")
+        top=rows("SELECT p.id,p.title,p.poster,p.kind,u.username,COUNT(v.user_id) views FROM community_posts p JOIN users u ON u.id=p.user_id JOIN community_views v ON v.post_id=p.id WHERE p.status='published' AND u.status='active' AND (p.space_id IS NULL OR EXISTS(SELECT 1 FROM social_spaces ss WHERE ss.id=p.space_id AND ss.status='active' AND ss.privacy='public')) AND p.kind IN ('movie','series','channel') GROUP BY p.id ORDER BY views DESC,p.created_at DESC LIMIT 10")
         return jsonify(people=people,top=top,games=community_publishing.game_rank(db(),uid()))
 
     @app.route('/api/community/dm/<other>',methods=['GET','POST'])
@@ -394,14 +460,16 @@ def register_community(app, db, auth, data, error):
     def community_rooms():
         if request.method=='GET':
             offset=max(0,min(10000,int(request.args.get('offset',0))))
-            rs=rows("SELECT r.id,r.title,r.description,r.kind,r.host_id,r.approval,r.created_at,r.cover,r.permanent,(SELECT kind FROM community_games cg WHERE cg.room_id=r.id AND cg.status IN ('lobby','playing')) game_kind,u.name,u.username,(SELECT COUNT(*) FROM community_members m JOIN users mu ON mu.id=m.user_id WHERE m.room_id=r.id AND m.status='joined' AND m.seen_at>? AND mu.status='active') members FROM community_rooms r JOIN users u ON u.id=r.host_id WHERE r.status='open' AND u.status='active' AND (r.post_id IS NULL OR EXISTS (SELECT 1 FROM community_posts cp JOIN users pu ON pu.id=cp.user_id WHERE cp.id=r.post_id AND cp.status='published' AND pu.status='active')) ORDER BY members DESC,r.created_at DESC LIMIT 31 OFFSET ?",(time.time()-45,offset))
+            rs=rows("SELECT r.id,r.title,r.description,r.kind,r.host_id,r.approval,r.created_at,r.cover,r.permanent,r.privacy,r.activity,(SELECT kind FROM community_games cg WHERE cg.room_id=r.id AND cg.status IN ('lobby','playing')) game_kind,u.name,u.username,u.verified,(SELECT COUNT(*) FROM community_members m JOIN users mu ON mu.id=m.user_id WHERE m.room_id=r.id AND m.status='joined' AND m.seen_at>? AND mu.status='active') members FROM community_rooms r JOIN users u ON u.id=r.host_id WHERE r.status='open' AND u.status='active' AND (r.privacy!='private' OR r.host_id=? OR EXISTS(SELECT 1 FROM community_members pm WHERE pm.room_id=r.id AND pm.user_id=? AND pm.status IN ('joined','pending'))) AND (r.post_id IS NULL OR EXISTS (SELECT 1 FROM community_posts cp JOIN users pu ON pu.id=cp.user_id WHERE cp.id=r.post_id AND cp.status='published' AND pu.status='active')) ORDER BY members DESC,r.created_at DESC LIMIT 31 OFFSET ?",(time.time()-45,uid(),uid(),offset))
             return jsonify(rooms=rs[:30],more=len(rs)>30)
         d=data();kind=d.get('kind')
         if kind not in ('watch','voice','video','live','music'):raise error('Tipo de sala inválido.')
         title,description=text(d,'title',120,2),text(d,'description',1000)
         tx();pid=d.get('post_id') or None
-        source=post(pid)['url'] if pid else d.get('url')
-        url,media=content_url(source,error,media=True,optional=kind in ('voice','video','live'))
+        source_post=post(pid) if pid else None
+        if source_post and source_post['space_id'] and db().execute("SELECT 1 FROM social_spaces WHERE id=? AND privacy='private'",(source_post['space_id'],)).fetchone():raise error('Use uma publicação pública para abrir uma sala compartilhável.')
+        source=source_post['url'] if source_post else d.get('url')
+        url,media=content_url(source,error,media=True,optional=kind in ('voice','video','live','music'))
         if kind in ('voice','video') and url:raise error('Escolha uma sala JumpFlix, música ou live para compartilhar mídia.')
         limit('community_rooms','host_id=?',(uid(),),12,3600)
         community_social.retain_assets(db(),url)
@@ -413,7 +481,16 @@ def register_community(app, db, auth, data, error):
         rid=secrets.token_urlsafe(9);now=time.time()
         db().execute('INSERT INTO community_rooms(id,host_id,title,description,kind,url,media_type,post_id,approval,updated_at,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)',(rid,uid(),title,description,kind,url,media,pid,int(d.get('approval',True) is not False),now,now))
         db().execute('UPDATE community_rooms SET cover=?,permanent=? WHERE id=?',(cover,int(d.get('permanent') is True),rid))
-        if game_kind:community_games.create_lobby(db(),rid,uid(),game_kind)
+        if kind=='music' and d.get('track_id'):
+            track=db().execute('SELECT * FROM music_tracks WHERE id=?',(d['track_id'],)).fetchone()
+            if not track:raise error('Música indisponível.',404)
+            qid=db().execute('INSERT INTO community_queue(room_id,title,url,media_type,created_at,track_id,added_by,position) VALUES(?,?,?,?,?,?,?,0)',(rid,track['title'],track['url'],'soundcloud' if track['provider']=='soundcloud' else 'audio',now,track['id'],uid())).lastrowid
+            db().execute('UPDATE community_rooms SET music_current=?,url=?,media_type=? WHERE id=?',(qid,track['url'],'soundcloud' if track['provider']=='soundcloud' else 'audio',rid))
+        room_experience.options(db(),rid,d,error,creating=True)
+        if game_kind:
+            plugin=db().execute('SELECT active FROM room_plugins WHERE id=?',(game_kind,)).fetchone()
+            if not plugin or not plugin['active']:raise error('Jogo desativado pelo administrador.')
+            community_games.create_lobby(db(),rid,uid(),game_kind)
         if d.get('publish_to_feed') is True:
             limit('community_posts','user_id=?',(uid(),),15,3600)
             announcement=secrets.token_urlsafe(9)
@@ -427,12 +504,13 @@ def register_community(app, db, auth, data, error):
     def community_room_preview(rid):
         r=room(rid)
         host=person(r['host_id']);m=db().execute('SELECT status FROM community_members WHERE room_id=? AND user_id=?',(rid,uid())).fetchone()
-        return jsonify(room={k:r[k] for k in ('id','title','description','kind','host_id','approval','cover','permanent')},host=dict(host),status=m[0] if m else 'new')
+        return jsonify(room={k:r[k] for k in ('id','title','description','kind','host_id','approval','cover','permanent','privacy','activity')},host=dict(host),status=m[0] if m else 'new')
 
     @app.post('/api/community/rooms/<rid>/join')
     @auth()
     def community_join(rid):
         tx();r=room(rid);clean_seats(rid);m=db().execute('SELECT status FROM community_members WHERE room_id=? AND user_id=?',(rid,uid())).fetchone()
+        room_experience.admission(db(),r,uid(),data().get('password'),error)
         status=m[0] if m else ('pending' if r['approval'] and r['host_id']!=uid() else 'joined')
         if status=='left':status='pending' if r['approval'] and r['host_id']!=uid() else 'joined'
         if status in ('rejected','banned'):raise error('O anfitrião recusou ou removeu seu acesso a esta sala.',403)
@@ -499,15 +577,31 @@ def register_community(app, db, auth, data, error):
         d=data();cursor=max(0,int(d.get('cursor',0)));tx();r=room(rid,True)
         mic=d.get('mic',False) is True;camera=d.get('camera',False) is True
         clean_seats(rid)
-        permissions=db().execute('SELECT seat,mic_blocked FROM community_members WHERE room_id=? AND user_id=?',(rid,uid())).fetchone()
-        if permissions['seat'] is None:mic=camera=False
+        permissions=db().execute('SELECT seat,mic_blocked,camera FROM community_members WHERE room_id=? AND user_id=?',(rid,uid())).fetchone()
+        if permissions['seat'] is None:
+            mic=False
+            if r['kind']!='watch':camera=False
         if permissions['mic_blocked']:mic=False
-        if r['kind'] not in ('video','live'):camera=False
+        if r['kind'] not in ('video','live','watch'):camera=False
+        # Watch camera slots are changed only by the atomic reservation endpoint.
+        # A heartbeat sent before getUserMedia finishes must not revoke the new slot.
+        if r['kind']=='watch':camera=bool(permissions['camera'])
         db().execute('UPDATE community_members SET seen_at=?,mic=?,camera=? WHERE room_id=? AND user_id=?',(time.time(),int(mic),int(camera),rid,uid()))
         db().execute('DELETE FROM community_signals WHERE created_at<?',(time.time()-90,))
         signals=rows('SELECT id,sender,payload FROM community_signals WHERE room_id=? AND recipient=? AND id>? ORDER BY id LIMIT 200',(rid,uid(),cursor))
         for s in signals:s['payload']=json.loads(s['payload'])
+        if r['kind']=='music':db().execute('UPDATE community_members SET mic=0,camera=0 WHERE room_id=?',(rid,))
         result=snapshot(rid);db().commit();return jsonify(room=result,signals=signals)
+
+    @app.patch('/api/community/rooms/<rid>/camera')
+    @auth()
+    def community_watch_camera(rid):
+        enabled=data().get('enabled')
+        if type(enabled) is not bool:raise error('Estado de câmera inválido.')
+        tx();r=room(rid,True);clean_seats(rid)
+        if r['kind']!='watch':raise error('Esta câmera é para uma sala de cinema.')
+        if enabled and db().execute("SELECT COUNT(*) FROM community_members WHERE room_id=? AND camera=1 AND status='joined' AND seen_at>? AND user_id!=?",(rid,time.time()-45,uid())).fetchone()[0]>=4:raise error('Esta sessão já tem quatro câmeras ligadas.',409)
+        db().execute('UPDATE community_members SET camera=?,seen_at=? WHERE room_id=? AND user_id=?',(int(enabled),time.time(),rid,uid()));result=snapshot(rid);db().commit();return jsonify(room=result)
 
     @app.patch('/api/community/rooms/<rid>/playback')
     @auth()
@@ -528,10 +622,11 @@ def register_community(app, db, auth, data, error):
     @auth()
     def community_signal(rid):
         d=data();other=str(d.get('recipient',''));payload=d.get('payload');tx();r=room(rid,True)
+        if r['kind']=='music':raise error('Salas musicais têm apenas chat de texto.',403)
         if not isinstance(payload,dict) or payload.get('type') not in ('offer','answer','candidate') or len(json.dumps(payload))>25000:raise error('Sinal inválido.')
         if not db().execute("SELECT 1 FROM community_members m JOIN users u ON u.id=m.user_id WHERE m.room_id=? AND m.user_id=? AND m.status='joined' AND m.seen_at>? AND u.status='active'",(rid,other,time.time()-45)).fetchone():raise error('Participante indisponível.',404)
         clean_seats(rid)
-        if not db().execute('SELECT 1 FROM community_members WHERE room_id=? AND user_id IN (?,?) AND seat IS NOT NULL',(rid,uid(),other)).fetchone():raise error('A plateia só pode conectar áudio e vídeo com os assentos.',403)
+        if r['kind']!='watch' and not db().execute('SELECT 1 FROM community_members WHERE room_id=? AND user_id IN (?,?) AND seat IS NOT NULL',(rid,uid(),other)).fetchone():raise error('A plateia só pode conectar áudio e vídeo com os assentos.',403)
         limit('community_signals','sender=?',(uid(),),3000,60)
         db().execute('INSERT INTO community_signals(room_id,sender,recipient,payload,created_at) VALUES(?,?,?,?,?)',(rid,uid(),other,json.dumps(payload),time.time()));db().commit();return jsonify(ok=True)
 
@@ -547,7 +642,8 @@ def register_community(app, db, auth, data, error):
     def community_room_settings(rid):
         d=data();title=text(d,'title',120,2);description=text(d,'description',1000);tx();r=room(rid,host=True)
         db().execute('UPDATE community_rooms SET title=?,description=?,approval=?,permanent=? WHERE id=?',(title,description,int(d.get('approval',True) is not False),int(d.get('permanent',bool(r['permanent'])) is True),rid))
-        db().commit();return jsonify(ok=True)
+        room_experience.options(db(),rid,d,error)
+        result=snapshot(rid);db().commit();return jsonify(ok=True,room=result)
 
     @app.delete('/api/community/rooms/<rid>')
     @auth()
@@ -557,7 +653,8 @@ def register_community(app, db, auth, data, error):
     @app.post('/api/community/rooms/<rid>/queue')
     @auth()
     def community_enqueue(rid):
-        d=data();title=text(d,'title',160,2);url,media=content_url(d.get('url'),error,media=True);tx();room(rid,True,True)
+        d=data();title=text(d,'title',160,2);url,media=content_url(d.get('url'),error,media=True);tx();r=room(rid,True,True)
+        if r['kind']=='music' and r['music_current']:raise error('Use a fila da sala musical.',409)
         if db().execute('SELECT COUNT(*) FROM community_queue WHERE room_id=?',(rid,)).fetchone()[0]>=100:raise error('A fila tem 100 itens. Reproduza ou remova um para adicionar outro.')
         community_social.retain_assets(db(),url)
         db().execute('INSERT INTO community_queue(room_id,title,url,media_type,created_at) VALUES(?,?,?,?,?)',(rid,title,url,media,time.time()));db().commit();return jsonify(ok=True),201
@@ -565,7 +662,9 @@ def register_community(app, db, auth, data, error):
     @app.route('/api/community/rooms/<rid>/queue/<int:item>',methods=['POST','DELETE'])
     @auth()
     def community_queue(rid,item):
-        tx();r=room(rid,True,True);q=db().execute('SELECT * FROM community_queue WHERE id=? AND room_id=?',(item,rid)).fetchone()
+        tx();r=room(rid,True,True)
+        if r['kind']=='music' and r['music_current']:raise error('Use a fila da sala musical.',409)
+        q=db().execute('SELECT * FROM community_queue WHERE id=? AND room_id=?',(item,rid)).fetchone()
         if not q:raise error('Item não encontrado.',404)
         if request.method=='POST':db().execute('UPDATE community_rooms SET url=?,media_type=?,post_id=NULL,position=0,paused=1,revision=revision+1,updated_at=? WHERE id=?',(q['url'],q['media_type'],time.time(),rid))
         db().execute('DELETE FROM community_queue WHERE id=?',(item,));db().commit();return jsonify(ok=True)
@@ -588,7 +687,7 @@ def register_community(app, db, auth, data, error):
             else:cur=db().execute('UPDATE community_posts SET status=? WHERE id=?',('published' if action=='publish' else 'hidden',target))
         elif kind=='rooms' and action=='edit':
             title=text(d,'title',120,2);description=text(d,'description',1000)
-            cur=db().execute('UPDATE community_rooms SET title=?,description=?,approval=? WHERE id=?',(title,description,int(d.get('approval',True) is not False),target))
+            cur=db().execute('UPDATE community_rooms SET title=?,description=?,approval=?,permanent=COALESCE(?,permanent) WHERE id=?',(title,description,int(d.get('approval',True) is not False),int(d['permanent'] is True) if 'permanent' in d else None,target))
         elif kind=='rooms' and action in ('close','reopen'):
             cur=db().execute('UPDATE community_rooms SET status=? WHERE id=?',('open' if action=='reopen' else 'closed',target))
             if action=='close':db().execute("UPDATE community_members SET status='left',seat=CASE WHEN user_id=(SELECT host_id FROM community_rooms WHERE id=room_id) THEN 1 ELSE NULL END,mic=0,camera=0 WHERE room_id=? AND status IN ('joined','pending')",(target,))
@@ -623,7 +722,11 @@ def register_community(app, db, auth, data, error):
         else:db().execute('DELETE FROM community_awards WHERE user_id=? AND badge_id=?',(user[0],bid))
         audit('award:'+request.method,user[0]+':'+bid);db().commit();return jsonify(ok=True)
 
+    room_experience.register(app,db,auth,data,error,room,content_url)
+    flix_wallet.register(app,db,auth,data,error)
     community_publishing.register(app, db, auth, data, error, external_url)
     community_games.register(app, db, auth, data, error, room)
     social_hub.register(app,db,auth,data,error)
+    community_experience.register(app,db,auth,data,error,post)
+    social_spaces.register(app,db,auth,data,error)
     community_social.register(app, db, auth, data, error, external_url, room, post)

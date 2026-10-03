@@ -4,12 +4,13 @@ import datetime
 import json
 import re
 import secrets
+import notification_payload
 import time
 from pathlib import Path
 from flask import g, jsonify, request, send_file
 from cryptography.hazmat.primitives.asymmetric import ec
 
-PREFS={'presence':'available','status_text':'','show_activity':False,'messages':True,'social':True,'rooms':True,'account':True,'calls':True,'sounds':True}
+PREFS={'presence':'available','status_text':'','show_activity':False,'messages':True,'social':True,'rooms':True,'account':True,'calls':True,'sounds':True,'message_preview':True}
 
 def migrate(db):
     db.executescript('''
@@ -35,6 +36,10 @@ def migrate(db):
     actor="COALESCE((SELECT name FROM users WHERE id=NEW.user_id),'Alguém')"
     trigger('friend_request','jump_friends','INSERT',f"SELECT NEW.recipient,NEW.sender,'social','Pedido de amizade',(SELECT name FROM users WHERE id=NEW.sender)||' quer adicionar você.','/comunidade?tab=friends',{now},'friend:'||NEW.sender||':'||NEW.created_at", "NEW.status='pending'")
     trigger('friend_accept','jump_friends','UPDATE',f"SELECT NEW.sender,NEW.recipient,'social','Amizade aceita',(SELECT name FROM users WHERE id=NEW.recipient)||' aceitou seu pedido.','/comunidade?tab=friends&dm='||NEW.recipient,{now},'friend-accepted:'||NEW.recipient||':'||NEW.created_at", "NEW.status='accepted' AND OLD.status!='accepted'")
+    trigger('jump_invite','jump_invites','INSERT',f"SELECT NEW.user_id,r.host_id,'rooms','Convite para assistir',c.title,'/sala/'||r.id,{now},'jump-invite:'||r.id FROM jump_rooms r JOIN content c ON c.id=r.content_id WHERE r.id=NEW.room_id")
+    trigger('jump_request','jump_requests','INSERT',f"SELECT r.host_id,NEW.user_id,'rooms','Pedido para entrar no FlixJump',{actor}||' quer assistir com você.','/sala/'||r.id,{now},'jump-request:'||r.id||':'||NEW.user_id||':'||NEW.created_at FROM jump_rooms r WHERE r.id=NEW.room_id", "NEW.status='pending'")
+    trigger('jump_decision','jump_requests','UPDATE',f"SELECT NEW.user_id,r.host_id,'rooms',CASE WHEN NEW.status='approved' THEN 'Entrada no FlixJump aceita' ELSE 'Pedido recusado' END,c.title,'/sala/'||r.id,{now},'jump-decision:'||r.id||':'||NEW.created_at FROM jump_rooms r JOIN content c ON c.id=r.content_id WHERE r.id=NEW.room_id", "NEW.status IN ('approved','rejected') AND OLD.status='pending'")
+    trigger('jump_host','jump_rooms','UPDATE',f"SELECT NEW.host_id,OLD.host_id,'rooms','Você é o anfitrião do FlixJump','Os controles do player estão com você.','/sala/'||NEW.id,{now},'jump-host:'||NEW.id||':'||NEW.revision", "NEW.host_id!=OLD.host_id")
     trigger('dm','community_dm','INSERT',f"SELECT NEW.recipient,NEW.sender,'messages','Nova mensagem',(SELECT name FROM users WHERE id=NEW.sender)||' enviou uma mensagem.','/comunidade?tab=friends&dm='||NEW.sender,NEW.created_at,'dm:'||NEW.id")
     db.executescript('''CREATE TRIGGER IF NOT EXISTS hub_streak AFTER INSERT ON community_dm BEGIN
       INSERT INTO hub_streak_days(first_id,second_id,day,first_sent,second_sent) VALUES(MIN(NEW.sender,NEW.recipient),MAX(NEW.sender,NEW.recipient),date(NEW.created_at,'unixepoch','-3 hours'),NEW.sender<NEW.recipient,NEW.sender>NEW.recipient)
@@ -91,7 +96,7 @@ def profile_activity(db,user,viewer):
     if not (own or pref['show_activity']):return value
     def resolve(source,target):
         if source=='catalog':r=db.execute("SELECT id,title,poster,kind FROM content WHERE id=? AND published=1",(target,)).fetchone()
-        else:r=db.execute("SELECT p.id,p.title,p.poster,p.kind FROM community_posts p JOIN users u ON u.id=p.user_id WHERE p.id=? AND p.status='published' AND u.status='active'",(target,)).fetchone()
+        else:r=db.execute("SELECT p.id,p.title,p.poster,p.kind FROM community_posts p JOIN users u ON u.id=p.user_id WHERE p.id=? AND p.status='published' AND u.status='active' AND (p.space_id IS NULL OR EXISTS(SELECT 1 FROM social_spaces ss WHERE ss.id=p.space_id AND ss.status='active' AND ss.privacy='public'))",(target,)).fetchone()
         return {**dict(r),'source':source,'href':('/titulo/' if source=='catalog' else '/comunidade/post/')+r['id']} if r else None
     recent=db.execute("SELECT source,target_id,MAX(watched_at) watched_at FROM (SELECT 'catalog' source,content_id target_id,watched_at FROM watch_history WHERE user_id=? UNION ALL SELECT source,target_id,watched_at FROM hub_watch WHERE user_id=?) GROUP BY source,target_id ORDER BY watched_at DESC LIMIT 12",(user,user)).fetchall()
     value['recently_watched']=[{**item,'watched_at':r['watched_at']} for r in recent if (item:=resolve(r['source'],r['target_id']))]
@@ -103,8 +108,12 @@ def share_preview(db,kind,target):
     if kind in ('room','game'):
         r=db.execute("SELECT id,title,cover,kind FROM community_rooms WHERE id=? AND status='open'",(target,)).fetchone()
         return {'kind':kind,'id':target,'title':r['title'],'image':r['cover'],'href':'/comunidade/sala/'+target} if r else None
+    if kind in ('music','playlist'):
+        table='music_tracks' if kind=='music' else 'music_playlists'
+        r=db.execute(('SELECT id,title,image FROM music_tracks WHERE id=?' if kind=='music' else 'SELECT id,name title,cover image FROM music_playlists WHERE id=? AND public=1'),(target,)).fetchone()
+        return {**dict(r),'kind':kind,'href':'/comunidade?tab=music&'+('track' if kind=='music' else 'playlist')+'='+target} if r else None
     if kind in ('post','reel'):
-        r=db.execute("SELECT p.id,p.title,p.poster FROM community_posts p JOIN users u ON u.id=p.user_id WHERE p.id=? AND p.status='published' AND u.status='active'",(target,)).fetchone()
+        r=db.execute("SELECT p.id,p.title,p.poster FROM community_posts p JOIN users u ON u.id=p.user_id WHERE p.id=? AND p.status='published' AND u.status='active' AND (p.space_id IS NULL OR EXISTS(SELECT 1 FROM social_spaces ss WHERE ss.id=p.space_id AND ss.status='active' AND ss.privacy='public'))",(target,)).fetchone()
         return {'kind':kind,'id':target,'title':r['title'],'image':r['poster'],'href':'/comunidade/post/'+target} if r else None
     return None
 
@@ -158,9 +167,9 @@ def register(app,db,auth,data,error):
     @auth()
     def hub_notifications():
         after=max(0,int(request.args.get('after',0)));before=max(0,int(request.args.get('before',0)))
-        rows=[dict(r) for r in db().execute('SELECT id,category,title,body,href,created_at,read_at FROM hub_notifications WHERE user_id=? AND id>? AND (?=0 OR id<?) ORDER BY id DESC LIMIT 60',(uid(),after,before,before))]
+        rows=[dict(r) for r in db().execute('SELECT id,user_id,actor_id,dedupe,category,title,body,href,created_at,read_at FROM hub_notifications WHERE user_id=? AND id>? AND (?=0 OR id<?) ORDER BY id DESC LIMIT 60',(uid(),after,before,before))]
         unread=db().execute('SELECT COUNT(*) FROM hub_notifications WHERE user_id=? AND read_at IS NULL',(uid(),)).fetchone()[0]
-        return jsonify(notifications=rows,unread=unread,preferences=preferences(db(),uid()))
+        return jsonify(notifications=[{**n,**notification_payload.build(db(),n,preferences(db(),uid()))} for n in rows],unread=unread,preferences=preferences(db(),uid()))
 
     @app.post('/api/hub/notifications/read')
     @auth()
@@ -174,7 +183,7 @@ def register(app,db,auth,data,error):
     @app.get('/api/hub/inbox')
     @auth()
     def hub_inbox():
-        rs=db().execute("""SELECT u.id,u.name,u.username,COALESCE(p.avatar,'') avatar,COALESCE(o.seen_at,0) seen_at,(o.typing_to=? AND o.typing_at>?) typing,
+        rs=db().execute("""SELECT u.id,u.name,u.username,u.verified,COALESCE(p.avatar,'') avatar,COALESCE(o.seen_at,0) seen_at,(o.typing_to=? AND o.typing_at>?) typing,
           (SELECT body FROM community_dm d WHERE (d.sender=u.id AND d.recipient=?) OR (d.sender=? AND d.recipient=u.id) ORDER BY id DESC LIMIT 1) last_message,
           (SELECT MAX(created_at) FROM community_dm d WHERE (d.sender=u.id AND d.recipient=?) OR (d.sender=? AND d.recipient=u.id)) last_at,
           (SELECT COUNT(*) FROM community_dm d WHERE d.sender=u.id AND d.recipient=? AND d.id>COALESCE((SELECT message_id FROM community_dm_reads WHERE user_id=? AND other_id=u.id),0)) unread
@@ -182,7 +191,8 @@ def register(app,db,auth,data,error):
         friends=[]
         for r in rs:
             v=dict(r);p=preferences(db(),v['id']);v['online']=v.pop('seen_at')>time.time()-60 and p['presence']!='invisible';v['presence']=p['presence'] if v['online'] else 'offline';v['typing']=bool(v['typing'] and v['online']);v['status_text']=p['status_text'];v['streak']=streak(db(),uid(),v['id']);friends.append(v)
-        return jsonify(friends=friends)
+        import social_spaces
+        return jsonify(friends=friends,groups=social_spaces.groups(db(),uid()))
 
     @app.route('/api/hub/dm/<other>',methods=['GET','POST'])
     @auth()
@@ -191,6 +201,7 @@ def register(app,db,auth,data,error):
         if request.method=='POST':
             d=data();body=str(d.get('body','')).strip();aid=d.get('audio');share=d.get('share');client=d.get('client_id')
             if len(body)>1500 or (not body and not aid and not share):raise error('Escreva uma mensagem, grave um áudio ou compartilhe algo.')
+            if aid and (not isinstance(aid,str) or not re.fullmatch('[a-f0-9]{32}',aid)):raise error('Áudio inválido.')
             if client and (not isinstance(client,str) or not re.fullmatch('[a-zA-Z0-9_-]{8,80}',client)):raise error('Identificador de mensagem inválido.')
             db().execute('BEGIN IMMEDIATE');friend(other)
             key=uid()+':'+client if client else None
@@ -236,7 +247,8 @@ def register(app,db,auth,data,error):
     def hub_audio_read(aid):
         if not re.fullmatch('[a-f0-9]{32}',aid):raise error('Áudio não encontrado.',404)
         r=db().execute('SELECT * FROM hub_dm_media WHERE id=?',(aid,)).fetchone()
-        if not r or (r['user_id']!=uid() and not db().execute('SELECT 1 FROM hub_dm_meta m JOIN community_dm d ON d.id=m.message_id WHERE m.attachment_id=? AND (d.sender=? OR d.recipient=?)',(aid,uid(),uid())).fetchone()):raise error('Áudio não encontrado.',404)
+        import social_spaces
+        if not r or (r['user_id']!=uid() and not social_spaces.group_audio_access(db(),aid,uid()) and not db().execute('SELECT 1 FROM hub_dm_meta m JOIN community_dm d ON d.id=m.message_id WHERE m.attachment_id=? AND (d.sender=? OR d.recipient=?)',(aid,uid(),uid())).fetchone()):raise error('Áudio não encontrado.',404)
         if not (directory/aid).exists():raise error('Áudio indisponível.',404)
         return send_file(directory/aid,mimetype=r['mime'],conditional=True,max_age=0)
 
@@ -244,6 +256,7 @@ def register(app,db,auth,data,error):
     @auth()
     def hub_activity():
         d=data();source=d.get('source');target=str(d.get('id',''))
+        if source not in ('catalog','community') or not re.fullmatch(r'[a-zA-Z0-9_-]{1,100}',target) or not isinstance(d.get('playing'),bool):raise error('Atividade inválida.')
         if not d.get('playing'):
             db().execute('DELETE FROM hub_activity WHERE user_id=? AND source=? AND target_id=?',(uid(),source,target))
         else:
@@ -288,6 +301,8 @@ def register(app,db,auth,data,error):
                 db().execute("UPDATE hub_calls SET status=CASE WHEN status='ringing' THEN 'cancelled' ELSE 'ended' END,updated_at=? WHERE id=? AND status IN ('ringing','accepted')",(now,cid))
             else:raise error('Ação inválida.')
             r=call_record(cid)
+        if r['status'] not in ('ringing','accepted'):
+            db().execute("UPDATE hub_notifications SET read_at=? WHERE dedupe=? AND read_at IS NULL",(time.time(),'call:'+cid))
         if r['status'] in ('ringing','accepted'):
             field='caller_seen' if uid()==r['caller'] else 'callee_seen';db().execute(f'UPDATE hub_calls SET {field}=? WHERE id=?',(time.time(),cid))
         cursor=max(0,int(request.args.get('cursor',0)))
@@ -318,8 +333,11 @@ def register(app,db,auth,data,error):
         d=data();endpoint=str(d.get('endpoint',''))
         if request.method=='DELETE':db().execute('DELETE FROM hub_push WHERE endpoint=? AND user_id=?',(endpoint,uid()));db().commit();return jsonify(ok=True)
         from urllib.parse import urlsplit
-        p=urlsplit(endpoint);allowed=('fcm.googleapis.com','updates.push.services.mozilla.com','push.services.mozilla.com','web.push.apple.com','notify.windows.com','wns.windows.com')
-        if p.scheme!='https' or not p.hostname or not any(p.hostname==x or p.hostname.endswith('.'+x) for x in allowed) or p.username or p.password or p.port not in (None,443) or len(endpoint)>3000:raise error('Serviço de notificações inválido.')
+        try:
+            p=urlsplit(endpoint);port=p.port
+        except ValueError:raise error('Serviço de notificações inválido.')
+        allowed=('fcm.googleapis.com','updates.push.services.mozilla.com','push.services.mozilla.com','web.push.apple.com','notify.windows.com','wns.windows.com')
+        if p.scheme!='https' or not p.hostname or not any(p.hostname==x or p.hostname.endswith('.'+x) for x in allowed) or p.username or p.password or port not in (None,443) or len(endpoint)>3000:raise error('Serviço de notificações inválido.')
         keys=d.get('keys',{})
         try:
             pub=base64.urlsafe_b64decode(keys['p256dh']+'='*((-len(keys['p256dh']))%4));secret=base64.urlsafe_b64decode(keys['auth']+'='*((-len(keys['auth']))%4))

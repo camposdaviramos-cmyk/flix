@@ -16,12 +16,14 @@ from urllib.parse import urlparse
 
 from cryptography.fernet import Fernet
 from flask import Flask, g, request, jsonify, send_from_directory, Response
+from social_text import SocialJSONProvider, payload as text_payload
 from seo import metadata, head as seo_head, fallback as seo_fallback, sitemap as seo_sitemap
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.exceptions import HTTPException
 from media import valid_url, fetch_playlist, parse_playlist
 from playback_diagnostics import register_playback_diagnostics, automatic_diagnostics
 from seed import catalog, SAMPLE
+import flix_wallet
 from community import migrate as migrate_community, register_community
 from jump import migrate as migrate_jump, register_jump, username_for
 from coupons import migrate as migrate_coupons, register_coupons, available_coupon, redeem as redeem_coupon
@@ -75,10 +77,10 @@ def create_app(data_dir=None, testing=False):
         row = db().execute('SELECT value FROM settings WHERE key=?', (key,)).fetchone()
         if not row:
             return default
-        return cipher.decrypt(row['value'].encode()).decode() if key in ('access_token', 'webhook_secret') else row['value']
+        return cipher.decrypt(row['value'].encode()).decode() if key in ('access_token', 'webhook_secret','youtube_api_key','soundcloud_client_id','soundcloud_client_secret','soundcloud_token') else row['value']
 
     def save_setting(key, value):
-        value = cipher.encrypt(value.encode()).decode() if key in ('access_token', 'webhook_secret') else value
+        value = cipher.encrypt(value.encode()).decode() if key in ('access_token', 'webhook_secret','youtube_api_key','soundcloud_client_id','soundcloud_client_secret','soundcloud_token') else value
         db().execute('INSERT OR REPLACE INTO settings VALUES(?,?)', (key, value))
 
     with app.app_context():
@@ -132,7 +134,7 @@ def create_app(data_dir=None, testing=False):
         response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
         response.headers['X-Frame-Options'] = 'DENY'
         response.headers['Permissions-Policy'] = 'camera=(self), microphone=(self), geolocation=()'
-        response.headers['Content-Security-Policy'] = "default-src 'self'; script-src 'self' https://www.youtube.com https://s.ytimg.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https: http:; media-src 'self' blob: https: http:; connect-src 'self' https: http:; worker-src 'self' blob:; frame-src https://www.youtube.com https://www.youtube-nocookie.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+        response.headers['Content-Security-Policy'] = "default-src 'self'; script-src 'self' https://www.youtube.com https://s.ytimg.com https://w.soundcloud.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https: http:; media-src 'self' blob: https: http:; connect-src 'self' https: http:; worker-src 'self' blob:; frame-src https://www.youtube.com https://www.youtube-nocookie.com https://w.soundcloud.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
         if request.path.startswith('/api/'):
             response.headers['Cache-Control'] = 'no-store'
         return response
@@ -163,16 +165,18 @@ def create_app(data_dir=None, testing=False):
             return wrapped
         return decorator
 
+    app.json = SocialJSONProvider(app)
+
     def data():
         result = request.get_json(silent=True)
         if not isinstance(result, dict):
             raise APIError('Envie os dados em formato JSON.')
-        return result
+        return text_payload(result)
 
     def public_user(user):
         if not user:
             return None
-        value = {k:user[k] for k in ('id','name','username','email','role','status','plan_id','expires_at','created_at')}
+        value = {k:user[k] for k in ('id','name','username','email','role','status','plan_id','expires_at','created_at','verified')}
         profile = db().execute('SELECT avatar FROM community_profiles WHERE user_id=?',(user['id'],)).fetchone()
         value['avatar'] = profile['avatar'] if profile else ''
         value['subscribed'] = user['role']=='admin' or user['expires_at']>time.time()
@@ -288,7 +292,7 @@ def create_app(data_dir=None, testing=False):
     @app.get('/api/library')
     @auth()
     def library():
-        return jsonify(progress=[dict(p) for p in db().execute('SELECT * FROM progress WHERE user_id=? ORDER BY updated_at DESC',(g.user['id'],))],favorites=[p[0] for p in db().execute('SELECT content_id FROM favorites WHERE user_id=?',(g.user['id'],))],recent_channels=[dict(p) for p in db().execute("SELECT h.content_id,h.watched_at FROM watch_history h JOIN content c ON c.id=h.content_id WHERE h.user_id=? AND c.kind='channel' AND c.published=1 ORDER BY h.watched_at DESC",(g.user['id'],))])
+        return jsonify(recent_watched=[dict(p) for p in db().execute("SELECT h.content_id,h.watched_at,c.kind FROM watch_history h JOIN content c ON c.id=h.content_id WHERE h.user_id=? AND c.published=1 ORDER BY h.watched_at DESC LIMIT 100",(g.user['id'],))],progress=[dict(p) for p in db().execute('SELECT * FROM progress WHERE user_id=? ORDER BY updated_at DESC',(g.user['id'],))],favorites=[p[0] for p in db().execute('SELECT content_id FROM favorites WHERE user_id=?',(g.user['id'],))],recent_channels=[dict(p) for p in db().execute("SELECT h.content_id,h.watched_at FROM watch_history h JOIN content c ON c.id=h.content_id WHERE h.user_id=? AND c.kind='channel' AND c.published=1 ORDER BY h.watched_at DESC",(g.user['id'],))])
 
     @app.post('/api/favorites/<cid>')
     @auth()
@@ -364,16 +368,23 @@ def create_app(data_dir=None, testing=False):
     @auth()
     def checkout():
         d=data()
-        plan=db().execute('SELECT * FROM plans WHERE id=? AND active=1',(d.get('plan_id',''),)).fetchone()
-        if not plan:
-            raise APIError('Plano indisponível.')
+        coins=0;kind='subscription';plan_id=None;days=0
+        if d.get('package_id'):
+            pack=db().execute('SELECT * FROM coin_packages WHERE id=? AND active=1',(d['package_id'],)).fetchone()
+            if not pack:raise APIError('Pacote de moedas indisponível.')
+            if d.get('confirm_price')!=pack['price'] or d.get('confirm_coins')!=pack['coins']:raise APIError('O pacote mudou. Confira os valores e confirme novamente.',409)
+            coins=pack['coins'];amount=pack['price'];kind='coins';label=pack['name'];item_id=pack['id'];back='/carteira'
+        else:
+            plan=db().execute('SELECT * FROM plans WHERE id=? AND active=1',(d.get('plan_id',''),)).fetchone()
+            if not plan:raise APIError('Plano indisponível.')
+            plan_id=plan['id'];days=plan['days'];amount=plan['price'];label=plan['name'];item_id=plan['id'];back='/conta'
         base=setting('public_url').rstrip('/')
         if not base.startswith('https://') or not setting('webhook_secret'):
             raise APIError('O checkout está sendo preparado. Tente novamente em breve.',503)
         oid=uuid.uuid4().hex
-        db().execute('INSERT INTO orders(id,user_id,plan_id,amount,days,created_at) VALUES(?,?,?,?,?,?)',(oid,g.user['id'],plan['id'],plan['price'],plan['days'],time.time()))
+        db().execute('INSERT INTO orders(id,user_id,plan_id,amount,days,kind,coins,label,created_at) VALUES(?,?,?,?,?,?,?,?,?)',(oid,g.user['id'],plan_id,amount,days,kind,coins,label,time.time()))
         db().commit()
-        pref=mp_request('/checkout/preferences',{'items':[{'id':plan['id'],'title':f"{setting('brand','Flix')} · {plan['name']} · {plan['days']} dias",'quantity':1,'currency_id':'BRL','unit_price':plan['price']/100}],'payer':{'email':g.user['email']},'external_reference':oid,'back_urls':{s:base+'/conta?payment='+s+'&order='+oid for s in ('success','failure','pending')},'notification_url':base+'/api/payments/webhook','auto_return':'approved','metadata':{'order_id':oid}},oid)
+        pref=mp_request('/checkout/preferences',{'items':[{'id':item_id,'title':f"{setting('brand','Flix')} · {label}",'quantity':1,'currency_id':'BRL','unit_price':amount/100}],'payer':{'email':g.user['email']},'external_reference':oid,'back_urls':{s:base+back+'?payment='+s+'&order='+oid for s in ('success','failure','pending')},'notification_url':base+'/api/payments/webhook','auto_return':'approved','metadata':{'order_id':oid}},oid)
         db().execute('UPDATE orders SET preference_id=? WHERE id=?',(pref['id'],oid))
         db().commit()
         target=pref.get('sandbox_init_point') if setting('mode','test')=='test' else pref.get('init_point')
@@ -400,14 +411,17 @@ def create_app(data_dir=None, testing=False):
             if order['payment_id'] and order['payment_id']!=str(payment_id) and order['paid_at']:
                 db().rollback()
                 return 'approved'
-            if status=='approved' and not order['paid_at']:
+            if order['kind']=='coins':
+                flix_wallet.payment(db(),order,status)
+                if status=='approved' and not order['paid_at']:db().execute('UPDATE orders SET paid_at=? WHERE id=?',(time.time(),order['id']))
+            if order['kind']=='subscription' and status=='approved' and not order['paid_at']:
                 user=db().execute('SELECT * FROM users WHERE id=?',(order['user_id'],)).fetchone()
                 expires=max(time.time(),user['expires_at'])+order['days']*86400
                 db().execute('UPDATE users SET plan_id=?,expires_at=? WHERE id=?',(order['plan_id'],expires,user['id']))
                 db().execute('UPDATE orders SET paid_at=?,expires_at=? WHERE id=?',(time.time(),expires,order['id']))
             db().execute('UPDATE orders SET status=?,payment_id=? WHERE id=?',(status,str(payment_id),order['id']))
-            if status in ('refunded','charged_back') and order['paid_at']:
-                latest=db().execute("SELECT expires_at,plan_id FROM orders WHERE user_id=? AND status='approved' ORDER BY expires_at DESC LIMIT 1",(order['user_id'],)).fetchone()
+            if order['kind']=='subscription' and status in ('refunded','charged_back') and order['paid_at']:
+                latest=db().execute("SELECT expires_at,plan_id FROM orders WHERE user_id=? AND kind='subscription' AND status='approved' ORDER BY expires_at DESC LIMIT 1",(order['user_id'],)).fetchone()
                 db().execute('UPDATE users SET expires_at=?,plan_id=? WHERE id=?',(latest['expires_at'] if latest else 0,latest['plan_id'] if latest else None,order['user_id']))
             db().commit()
         except Exception:
@@ -602,11 +616,12 @@ def create_app(data_dir=None, testing=False):
                 raise APIError('Ambiente inválido.')
             for key in ('brand','support_email','public_url','mode'):
                 save_setting(key,str(d.get(key,'')).strip()[:300])
-            for key in ('access_token','webhook_secret'):
+            for key in ('access_token','webhook_secret','youtube_api_key','soundcloud_client_id','soundcloud_client_secret'):
                 if d.get(key):
                     save_setting(key,str(d[key]).strip())
+            if d.get('soundcloud_client_id') or d.get('soundcloud_client_secret'):save_setting('soundcloud_token','{}')
             db().commit()
-        return jsonify(**{k:setting(k) for k in ('brand','support_email','public_url','mode')},access_token_configured=bool(setting('access_token')),webhook_secret_configured=bool(setting('webhook_secret')))
+        return jsonify(**{k:setting(k) for k in ('brand','support_email','public_url','mode')},access_token_configured=bool(setting('access_token')),webhook_secret_configured=bool(setting('webhook_secret')),youtube_api_key_configured=bool(setting('youtube_api_key')),soundcloud_configured=bool(setting('soundcloud_client_id') and setting('soundcloud_client_secret')))
 
     @app.post('/api/admin/settings/test')
     @auth(admin=True)
@@ -633,7 +648,7 @@ def create_app(data_dir=None, testing=False):
         html = re.sub(r'<meta name="description"[^>]*>|<title>.*?</title>', '', html)
         html = html.replace('</head>', seo_head(meta) + '\n</head>')
         html = re.sub(r'<div id="app">.*?</div></div>', lambda _: '<div id="app">' + seo_fallback(meta) + '</div>', html, count=1)
-        response = Response(html, status=200 if meta['public'] or path in ('conta','lista','continuar') or path.startswith('admin') or path=='comunidade' or re.fullmatch(r'comunidade/(?:perfil/[a-zA-Z0-9_]{3,24}|(?:sala|post)/[A-Za-z0-9_-]{12})',path) or re.fullmatch(r'sala/[A-Za-z0-9_-]{12}',path) else 404, content_type='text/html; charset=utf-8')
+        response = Response(html, status=200 if meta['public'] or path in ('conta','carteira','lista','continuar','historico') or path.startswith('admin') or path=='comunidade' or re.fullmatch(r'comunidade/espaco/[a-zA-Z0-9_]{3,30}',path) or re.fullmatch(r'comunidade/criar(?:/(?:post|reel|story|movie|series))?',path) or re.fullmatch(r'comunidade/(?:perfil/[a-zA-Z0-9_]{3,24}|(?:sala|post)/[A-Za-z0-9_-]{12})',path) or re.fullmatch(r'sala/[A-Za-z0-9_-]{12}',path) else 404, content_type='text/html; charset=utf-8')
         response.headers['Cache-Control'] = 'no-cache'
         if not meta['public']:
             response.headers['X-Robots-Tag'] = 'noindex, nofollow'
@@ -641,6 +656,9 @@ def create_app(data_dir=None, testing=False):
 
     register_jump(app, db, auth, data, APIError, playback_item, public_user)
     register_community(app, db, auth, data, APIError)
+    import community_experience
+    import flix_music
+    flix_music.register(app,db,auth,data,APIError,setting,save_setting)
     register_coupons(app, db, auth, data, APIError, rate_limit)
     register_playback_diagnostics(app, db, auth, data, APIError, playback_item)
     import flix_push

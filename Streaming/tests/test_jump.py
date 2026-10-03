@@ -134,6 +134,17 @@ class JumpTests(unittest.TestCase):
         self.db.execute('UPDATE users SET expires_at=0 WHERE id=?',(self.ua['id'],));self.db.commit()
         self.assertEqual(self.call(self.a,'/jump/rooms',{'content_id':'horizonte'}).status_code,402)
 
+    def test_permanent_room_survives_departure_and_host_can_return(self):
+        r=self.room();path='/jump/rooms/'+r['id'];self.admit(self.b,path)
+        self.assertEqual(self.call(self.b,path+'/settings',{'permanent':True},'PATCH').status_code,403)
+        self.assertEqual(self.call(self.a,path+'/settings',{'permanent':True},'PATCH').status_code,200)
+        self.call(self.a,path+'/leave')
+        r=self.call(self.b,path+'/poll').json['room'];self.assertEqual(r['host_id'],self.ua['id']);self.assertTrue(r['permanent'])
+        self.call(self.b,path+'/leave');self.assertIsNotNone(self.db.execute('SELECT id FROM jump_rooms WHERE id=?',(r['id'],)).fetchone())
+        self.assertEqual(self.call(self.a,path+'/join').status_code,200)
+        self.assertEqual(self.call(self.a,path+'/settings',{'permanent':False},'PATCH').status_code,200)
+        self.call(self.a,path+'/leave');self.assertIsNone(self.db.execute('SELECT id FROM jump_rooms WHERE id=?',(r['id'],)).fetchone())
+
     def test_room_limit_and_content_access(self):
         r=self.room();path='/jump/rooms/'+r['id']
         for n in range(7):

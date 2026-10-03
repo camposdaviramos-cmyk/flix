@@ -1,6 +1,6 @@
-# VYRA — plataforma de streaming
+# Flix — streaming e comunidade
 
-Aplicação em português para filmes, séries e TV ao vivo, com landing page animada, catálogo, contas, planos, checkout e administração. Python 3.11+, Flask, SQLite e frontend HTML/CSS/JavaScript. O servidor usa Waitress.
+Aplicação em português para filmes, séries e TV ao vivo, com landing page animada, catálogo, contas, planos, checkout e administração. Python 3.11+, Flask, SQLite e frontend HTML/CSS/JavaScript. O servidor usa Waitress. Salas, lives com convidados, jogos, chat com chamadas, notificações e PWA estão documentados em [COMMUNITY.md](COMMUNITY.md).
 
 ## Executar no Windows
 
@@ -83,6 +83,7 @@ Fotografias do Unsplash foram copiadas para `static/assets`; a arte do hero foi 
 ## Persistência e publicação
 
 - Banco: `data/vyra.sqlite3` (SQLite/WAL).
+- Web Push: preserve `data/push-private.pem` e inclua `data/private-audio/` e `data/social-media/` nos backups. Instalação e notificações: [COMMUNITY.md](COMMUNITY.md#central-de-notificações-e-pwa).
 - Chave de criptografia: `data/secret.key`. Faça backup junto com o banco; perder a chave impede ler os tokens de pagamento.
 - Nunca publique a pasta `data` como conteúdo estático.
 - Variáveis opcionais: `PORT` (padrão 8000), `HOST` (padrão 127.0.0.1), `VYRA_DATA_DIR` (diretório persistente).

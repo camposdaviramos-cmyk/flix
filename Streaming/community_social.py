@@ -35,7 +35,26 @@ def local_asset(value,db,error,owner=None):
     if not re.fullmatch(r'[a-f0-9]{32}',aid):raise error('Arquivo inválido.')
     row=db.execute("SELECT a.* FROM community_assets a JOIN users u ON u.id=a.user_id WHERE a.id=? AND a.status='active' AND u.status='active' AND (a.expires_at IS NULL OR a.expires_at>?)",(aid,time.time())).fetchone()
     if not row or (owner and row['user_id']!=owner):raise error('Arquivo não encontrado ou indisponível.',404)
+    if not owner and g.get('user') and row['user_id']!=g.user['id'] and g.user['role']!='admin' and private_asset(db,value):raise error('Arquivo indisponível.',404)
     return value, row['mime'].split('/')[0]
+
+
+def private_asset(db,url):
+    joins="FROM community_posts p LEFT JOIN social_spaces ss ON ss.id=p.space_id LEFT JOIN community_post_meta m ON m.post_id=p.id LEFT JOIN community_compositions c ON c.target_type='post' AND c.target_id=p.id"
+    refs="(p.url=? OR p.poster=? OR instr(m.document,?)>0 OR instr(c.payload,?)>0)"
+    args=(url,)*4
+    viewer=g.user['id'] if g.get('user') else ''
+    restricted="(p.status IN ('private','archived','hidden','removed') OR ss.status='hidden' OR (ss.privacy='private' AND NOT EXISTS(SELECT 1 FROM social_space_members sm WHERE sm.space_id=ss.id AND sm.user_id=?)))"
+    if not db.execute('SELECT 1 '+joins+' WHERE '+restricted+' AND '+refs,(viewer,*args)).fetchone():return False
+    if db.execute("SELECT 1 "+joins+" WHERE p.status='published' AND (p.space_id IS NULL OR (ss.status='active' AND (ss.privacy='public' OR EXISTS(SELECT 1 FROM social_space_members sm WHERE sm.space_id=ss.id AND sm.user_id=?)))) AND "+refs,(viewer,*args)).fetchone():return False
+    if db.execute('SELECT 1 FROM music_tracks WHERE url=? OR image=?',(url,url)).fetchone():return False
+    if db.execute("SELECT 1 FROM music_playlists WHERE cover=? AND (public=1 OR user_id=?)",(url,viewer)).fetchone():return False
+    if db.execute("SELECT 1 FROM social_spaces WHERE status='active' AND (avatar=? OR cover=?)",(url,url)).fetchone():return False
+    if db.execute('SELECT 1 FROM hub_groups gr JOIN hub_group_members m ON m.group_id=gr.id WHERE gr.avatar=? AND m.user_id=?',(url,viewer)).fetchone():return False
+    if db.execute('SELECT 1 FROM community_profiles WHERE avatar=? OR cover=?',(url,url)).fetchone():return False
+    if db.execute("SELECT 1 FROM community_stories s LEFT JOIN community_compositions c ON c.target_type='story' AND c.target_id=s.id WHERE s.status='published' AND s.expires_at>? AND (s.media_url=? OR s.thumbnail=? OR instr(c.payload,?)>0)",(time.time(),url,url,url)).fetchone():return False
+    if db.execute("SELECT 1 FROM community_rooms WHERE status='open' AND (url=? OR cover=?)",(url,url)).fetchone():return False
+    return True
 
 
 def retain_assets(db, *urls):
@@ -47,12 +66,17 @@ def retain_assets(db, *urls):
 
 def permanent_asset(db,url):
     return any(db.execute(sql,args).fetchone() for sql,args in [
-        ("SELECT 1 FROM community_posts WHERE status='published' AND (url=? OR poster=?)",(url,url)),
+        ("SELECT 1 FROM community_posts WHERE status IN ('published','private','archived') AND (url=? OR poster=?)",(url,url)),
         ("SELECT 1 FROM community_profiles WHERE avatar=? OR cover=? OR website=?",(url,url,url)),
         ("SELECT 1 FROM community_rooms WHERE status='open' AND (url=? OR cover=?)",(url,url)),
         ("SELECT 1 FROM community_queue WHERE url=?",(url,)),
-        ("SELECT 1 FROM community_post_meta m JOIN community_posts p ON p.id=m.post_id WHERE p.status='published' AND instr(m.document,?)>0",(url,)),
-        ("SELECT 1 FROM community_drafts WHERE instr(payload,?)>0",(url,))])
+        ("SELECT 1 FROM community_post_meta m JOIN community_posts p ON p.id=m.post_id WHERE p.status IN ('published','private','archived') AND instr(m.document,?)>0",(url,)),
+        ("SELECT 1 FROM community_compositions c JOIN community_posts p ON p.id=c.target_id WHERE c.target_type='post' AND p.status IN ('published','private','archived') AND instr(c.payload,?)>0",(url,)),
+        ("SELECT 1 FROM community_drafts WHERE instr(payload,?)>0",(url,)),
+        ("SELECT 1 FROM music_tracks WHERE url=? OR image=?",(url,url)),
+        ("SELECT 1 FROM music_playlists WHERE cover=?",(url,)),
+        ("SELECT 1 FROM social_spaces WHERE avatar=? OR cover=?",(url,url)),
+        ("SELECT 1 FROM hub_groups WHERE avatar=?",(url,))])
 
 
 def reaction_state(db,typ,target,uid):
@@ -69,7 +93,7 @@ def register(app,db,auth,data,error,external_url,room,post):
     def asset(value,owner=True):
         return local_asset(value,db(),error,uid() if owner else None) or external_url(value,error,optional=True)
     def story(sid):
-        r=db().execute("SELECT s.*,u.name,u.username,COALESCE(p.avatar,'') avatar FROM community_stories s JOIN users u ON u.id=s.user_id LEFT JOIN community_profiles p ON p.user_id=u.id WHERE s.id=? AND s.status='published' AND s.expires_at>? AND u.status='active'",(sid,time.time())).fetchone()
+        r=db().execute("SELECT s.*,u.name,u.username,u.verified,COALESCE(p.avatar,'') avatar FROM community_stories s JOIN users u ON u.id=s.user_id LEFT JOIN community_profiles p ON p.user_id=u.id WHERE s.id=? AND s.status='published' AND s.expires_at>? AND u.status='active'",(sid,time.time())).fetchone()
         if not r:raise error('Este story expirou ou foi removido.',404)
         return r
 
@@ -130,7 +154,7 @@ def register(app,db,auth,data,error,external_url,room,post):
     @auth()
     def read_asset(aid):
         local_asset('/api/community/assets/'+aid,db(),error)
-        row=db().execute('SELECT mime FROM community_assets WHERE id=?',(aid,)).fetchone()
+        row=db().execute('SELECT mime,user_id FROM community_assets WHERE id=?',(aid,)).fetchone()
         path=directory/aid
         if not path.exists():raise error('Arquivo indisponível.',404)
         response=send_file(path,mimetype=row['mime'],conditional=True,max_age=0)
@@ -141,21 +165,27 @@ def register(app,db,auth,data,error,external_url,room,post):
     @auth()
     def stories():
         if request.method=='GET':
-            rows=db().execute("""SELECT s.*,u.name,u.username,COALESCE(p.avatar,'') avatar,
+            rows=db().execute("""SELECT s.*,u.name,u.username,u.verified,COALESCE(p.avatar,'') avatar,
               EXISTS(SELECT 1 FROM community_story_views v WHERE v.story_id=s.id AND v.user_id=?) viewed,
               (SELECT COUNT(*) FROM community_story_views v WHERE v.story_id=s.id) views
               FROM community_stories s JOIN users u ON u.id=s.user_id LEFT JOIN community_profiles p ON p.user_id=u.id
               WHERE s.status='published' AND s.expires_at>? AND u.status='active' ORDER BY s.created_at DESC LIMIT 100""",(uid(),time.time())).fetchall()
             return jsonify(stories=[dict(r) for r in rows])
         d=data();body=str(d.get('body','')).strip();background=d.get('background','#6246a8')
+        import community_experience
+        comp=community_experience.composition(db(),d['composition'],error,external_url,uid()) if d.get('composition') is not None else None
         if len(body)>700 or not re.fullmatch(r'#[0-9a-fA-F]{6}',str(background)):raise error('Texto ou cor inválida.')
         url,kind=asset(d.get('media_url',''))
-        if not body and not url:raise error('Adicione texto, foto ou vídeo.')
+        if not body and not url and not comp:raise error('Adicione texto, foto ou vídeo.')
         if url and kind not in ('image','video'):raise error('Stories aceitam imagem enviada ou vídeo MP4/WebM.')
         db().execute('BEGIN IMMEDIATE')
         if db().execute('SELECT COUNT(*) FROM community_stories WHERE user_id=? AND created_at>?',(uid(),time.time()-86400)).fetchone()[0]>=30:raise error('Você pode publicar até 30 stories por dia.',429)
         sid=secrets.token_urlsafe(9);now=time.time()
-        db().execute('INSERT INTO community_stories VALUES(?,?,?,?,?,?,?,?,?)',(sid,uid(),body,url,kind,background,now,now+86400,'published'))
+        thumbnail,thumb_kind=asset(d.get('thumbnail',''))
+        if thumbnail and thumb_kind!='image':raise error('A capa deve ser uma imagem.')
+        db().execute('INSERT INTO community_stories(id,user_id,body,media_url,media_type,background,created_at,expires_at,status,thumbnail) VALUES(?,?,?,?,?,?,?,?,?,?)',(sid,uid(),body,url,kind,background,now,now+86400,'published',thumbnail))
+        if thumbnail.startswith('/api/community/assets/') and not permanent_asset(db(),thumbnail):db().execute('UPDATE community_assets SET expires_at=? WHERE id=?',(now+86400,thumbnail.rsplit('/',1)[-1]))
+        if comp is not None:community_experience.save_composition(db(),'story',sid,comp,now+86400)
         if url.startswith('/api/community/assets/') and not permanent_asset(db(),url):
             db().execute('UPDATE community_assets SET expires_at=? WHERE id=?',(now+86400,url.rsplit('/',1)[-1]))
         db().commit();return jsonify(id=sid),201
@@ -167,7 +197,8 @@ def register(app,db,auth,data,error,external_url,room,post):
         if request.method=='DELETE':
             if s['user_id']!=uid() and g.user['role']!='admin':raise error('Você só pode remover seu story.',403)
             db().execute("UPDATE community_stories SET status='removed' WHERE id=?",(sid,));db().commit();return jsonify(ok=True)
-        detail=dict(s);detail['views']=db().execute('SELECT COUNT(*) FROM community_story_views WHERE story_id=?',(sid,)).fetchone()[0]
+        detail=dict(s);row=db().execute("SELECT payload FROM community_compositions WHERE target_type='story' AND target_id=?",(sid,)).fetchone();detail['composition']=json.loads(row[0]) if row else None
+        detail['views']=db().execute('SELECT COUNT(*) FROM community_story_views WHERE story_id=?',(sid,)).fetchone()[0]
         return jsonify(story=detail,reactions=reaction_state(db(),'story',sid,uid()))
 
     @app.post('/api/community/stories/<sid>/view')
@@ -193,7 +224,9 @@ def register(app,db,auth,data,error,external_url,room,post):
                 if reaction not in REACTIONS:raise error('Escolha uma reação válida.')
                 db().execute('INSERT INTO community_reactions VALUES(?,?,?,?,?) ON CONFLICT(target_type,target_id,user_id) DO UPDATE SET reaction=excluded.reaction',(typ,target,uid(),reaction,time.time()))
             db().commit()
-        return jsonify(reactions=reaction_state(db(),typ,target,uid()))
+        value=reaction_state(db(),typ,target,uid())
+        if typ=='post' and p['hide_likes']:value['counts']={}
+        return jsonify(reactions=value)
 
     @app.post('/api/community/presence')
     @auth()
@@ -206,20 +239,26 @@ def register(app,db,auth,data,error,external_url,room,post):
     @app.get('/api/community/inbox')
     @auth()
     def inbox():
-        friends=db().execute("""SELECT u.id,u.name,u.username,COALESCE(p.avatar,'') avatar,
+        friends=db().execute("""SELECT u.id,u.name,u.username,u.verified,COALESCE(p.avatar,'') avatar,
           COALESCE(o.seen_at,0)>? online, (o.typing_to=? AND o.typing_at>?) typing,
           (SELECT body FROM community_dm WHERE (sender=u.id AND recipient=?) OR (sender=? AND recipient=u.id) ORDER BY id DESC LIMIT 1) last_message,
           (SELECT COUNT(*) FROM community_dm d WHERE d.sender=u.id AND d.recipient=? AND d.id>COALESCE((SELECT message_id FROM community_dm_reads WHERE user_id=? AND other_id=u.id),0)) unread
           FROM jump_friends f JOIN users u ON u.id=CASE WHEN f.sender=? THEN f.recipient ELSE f.sender END
           LEFT JOIN community_profiles p ON p.user_id=u.id LEFT JOIN community_online o ON o.user_id=u.id
           WHERE f.status='accepted' AND (f.sender=? OR f.recipient=?) AND u.status='active' ORDER BY unread DESC,online DESC,u.name""",(time.time()-60,uid(),time.time()-5,uid(),uid(),uid(),uid(),uid(),uid(),uid())).fetchall()
-        return jsonify(friends=[dict(f) for f in friends],stickers=STICKERS)
+        import social_hub
+        values=[dict(f) for f in friends]
+        for f in values:
+            if social_hub.preferences(db(),f['id'])['presence']=='invisible':f['online']=False;f['typing']=False
+        return jsonify(friends=values,stickers=STICKERS)
 
     @app.post('/api/community/dm/<other>/read')
     @auth()
     def read_dm(other):
         friend(other);last=db().execute('SELECT COALESCE(MAX(id),0) FROM community_dm WHERE sender=? AND recipient=?',(other,uid())).fetchone()[0]
-        db().execute('INSERT INTO community_dm_reads VALUES(?,?,?) ON CONFLICT(user_id,other_id) DO UPDATE SET message_id=MAX(message_id,excluded.message_id)',(uid(),other,last));db().commit();return jsonify(ok=True)
+        db().execute('INSERT INTO community_dm_reads VALUES(?,?,?) ON CONFLICT(user_id,other_id) DO UPDATE SET message_id=MAX(message_id,excluded.message_id)',(uid(),other,last))
+        db().execute("UPDATE hub_notifications SET read_at=? WHERE user_id=? AND category='messages' AND actor_id=? AND dedupe LIKE 'dm:%' AND read_at IS NULL",(time.time(),uid(),other))
+        db().commit();return jsonify(ok=True)
 
     @app.get('/api/admin/community/social')
     @auth(admin=True)

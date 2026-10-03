@@ -1,5 +1,6 @@
 """Room games. All moves, hidden information and rewards are server authoritative."""
 import json
+import flix_wallet
 import math
 import random
 import secrets
@@ -29,7 +30,8 @@ def migrate(db):
 
 
 def create_lobby(db,rid,uid,kind):
-    game={'id':secrets.token_urlsafe(12),'kind':kind,'status':'lobby','revision':1};state={'players':[uid]}
+    plugin=db.execute('SELECT coins FROM room_plugins WHERE id=?',(kind,)).fetchone();cost=plugin['coins'] if plugin else 0
+    game={'id':secrets.token_urlsafe(12),'kind':kind,'status':'lobby','revision':1};state={'players':[] if cost else [uid],'entry_coins':cost}
     db.execute('INSERT OR REPLACE INTO community_games VALUES(?,?,?,?,?,?,?)',(rid,game['id'],kind,'lobby',json.dumps(state),1,time.time()))
     return game,state
 
@@ -113,6 +115,7 @@ def register(app, db, auth, data, error, room):
 
     def visible(game,s):
         uid=g.user['id'];out={k:game[k] for k in ('id','kind','status','revision')}
+        out['entry_coins']=s.get('entry_coins',0)
         out.update(players=[dict(db().execute("SELECT u.id,u.name,u.username,COALESCE(p.avatar,'') avatar FROM users u LEFT JOIN community_profiles p ON p.user_id=u.id WHERE u.id=?",(u,)).fetchone()) for u in s['players']],server_time=time.time(),notice=s.get('notice',''),winners=s.get('winners',[]),events=s.get('events',[]),rules_version=s.get('rules_version',1))
         if game['status'] in ('playing','finished'):
             out['deadline']=s['deadline']
@@ -139,6 +142,8 @@ def register(app, db, auth, data, error, room):
             if uid!=r['host_id']:raise error('Somente o anfitrião pode adicionar um jogo.',403)
             if game and game['status'] in ('lobby','playing'):raise error('Finalize ou encerre a partida atual.',409)
             if d.get('kind') not in ('colors','draw'):raise error('Jogo inválido.')
+            p=db().execute('SELECT active FROM room_plugins WHERE id=?',(d['kind'],)).fetchone()
+            if not p or not p['active']:raise error('Jogo desativado pelo administrador.')
             game,s=create_lobby(db(),rid,uid,d['kind'])
         else:
             if not game:raise error('Nenhum jogo nesta sala.',404)
@@ -148,11 +153,13 @@ def register(app, db, auth, data, error, room):
             if action=='cancel':
                 if uid!=r['host_id']:raise error('Somente o anfitrião pode encerrar.',403)
                 if game['status'] not in ('lobby','playing'):raise error('Esta partida já terminou.',409)
+                if game['status']=='lobby':flix_wallet.refund_game(db(),game['id'])
                 game['status']='cancelled';s['notice']='Partida encerrada pelo anfitrião. Nenhum ponto concedido.'
             elif action in ('join','leave'):
                 if game['status']!='lobby':raise error('A partida já começou.',409)
                 if action=='join' and uid not in s['players']:
                     if len(s['players'])>=8:raise error('Esta partida tem 8 jogadores. Você pode acompanhar a mesa.')
+                    flix_wallet.join_game(db(),game['id'],uid,s.get('entry_coins',0),d.get('confirm_coins'),error)
                     s['players'].append(uid)
                 if action=='leave' and uid in s['players']:s['players'].remove(uid)
             elif action=='start':

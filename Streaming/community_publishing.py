@@ -85,7 +85,7 @@ def validate(payload,db,error,external_url,partial=False):
         if not isinstance(ref,dict) or not isinstance(ref.get('id'),str):raise error('Título marcado inválido.')
         source=ref.get('source');tid=ref['id']
         if source=='catalog':row=db.execute("SELECT 1 FROM content WHERE id=? AND published=1 AND kind IN ('movie','series','channel')",(tid,)).fetchone()
-        elif source=='community':row=db.execute("SELECT 1 FROM community_posts p JOIN users u ON u.id=p.user_id WHERE p.id=? AND p.status='published' AND u.status='active' AND p.kind IN ('movie','series','channel')",(tid,)).fetchone()
+        elif source=='community':row=db.execute("SELECT 1 FROM community_posts p JOIN users u ON u.id=p.user_id WHERE p.id=? AND p.status='published' AND u.status='active' AND (p.space_id IS NULL OR EXISTS(SELECT 1 FROM social_spaces ss WHERE ss.id=p.space_id AND ss.privacy='public' AND ss.status='active')) AND p.kind IN ('movie','series','channel')",(tid,)).fetchone()
         else:row=None
         if not row:raise error('Título marcado indisponível.')
         value={'source':source,'id':tid}
@@ -96,7 +96,7 @@ def validate(payload,db,error,external_url,partial=False):
 def resolved_references(db,people,titles):
     p={'people':[],'titles':[]}
     for uid in people:
-        u=db.execute("SELECT u.id,u.name,u.username,COALESCE(pr.avatar,'') avatar FROM users u LEFT JOIN community_profiles pr ON pr.user_id=u.id WHERE u.id=? AND u.status='active'",(uid,)).fetchone()
+        u=db.execute("SELECT u.id,u.name,u.username,u.verified,COALESCE(pr.avatar,'') avatar FROM users u LEFT JOIN community_profiles pr ON pr.user_id=u.id WHERE u.id=? AND u.status='active'",(uid,)).fetchone()
         if u:p['people'].append(dict(u))
     for ref in titles:
         if ref['source']=='catalog':r=db.execute("SELECT id,title,kind,poster FROM content WHERE id=? AND published=1",(ref['id'],)).fetchone()
@@ -125,7 +125,7 @@ def save(db,pid,meta,urls):
 
 def game_rank(db,uid,kind='all'):
     if kind not in ('all','colors','draw'):kind='all'
-    query='''SELECT u.id,u.name,u.username,COALESCE(p.avatar,'') avatar,
+    query='''SELECT u.id,u.name,u.username,u.verified,COALESCE(p.avatar,'') avatar,
       SUM(r.points) points,SUM(r.won) wins,COUNT(*) games
       FROM community_game_results r JOIN users u ON u.id=r.user_id
       LEFT JOIN community_profiles p ON p.user_id=u.id
@@ -141,10 +141,10 @@ def register(app,db,auth,data,error,external_url):
     @auth()
     def publishing_search():
         q='%'+request.args.get('q','')[:100].strip().lstrip('@')+'%';kind=request.args.get('kind','people')
-        if kind=='people':items=[dict(r) for r in db().execute("SELECT u.id,u.name,u.username,COALESCE(p.avatar,'') avatar FROM users u LEFT JOIN community_profiles p ON p.user_id=u.id WHERE u.status='active' AND (u.username LIKE ? OR u.name LIKE ?) ORDER BY u.name LIMIT 10",(q,q))]
+        if kind=='people':items=[dict(r) for r in db().execute("SELECT u.id,u.name,u.username,u.verified,COALESCE(p.avatar,'') avatar FROM users u LEFT JOIN community_profiles p ON p.user_id=u.id WHERE u.status='active' AND (u.username LIKE ? OR u.name LIKE ?) ORDER BY u.name LIMIT 10",(q,q))]
         elif kind=='titles':
             items=[{**dict(r),'source':'catalog'} for r in db().execute("SELECT id,title,kind,poster FROM content WHERE published=1 AND kind IN ('movie','series','channel') AND title LIKE ? ORDER BY title LIMIT 8",(q,))]
-            items += [{**dict(r),'source':'community'} for r in db().execute("SELECT p.id,p.title,p.kind,p.poster,u.username FROM community_posts p JOIN users u ON u.id=p.user_id WHERE p.status='published' AND u.status='active' AND p.kind IN ('movie','series','channel') AND p.title LIKE ? ORDER BY p.created_at DESC LIMIT 8",(q,))]
+            items += [{**dict(r),'source':'community'} for r in db().execute("SELECT p.id,p.title,p.kind,p.poster,u.username FROM community_posts p JOIN users u ON u.id=p.user_id WHERE p.status='published' AND u.status='active' AND (p.space_id IS NULL OR EXISTS(SELECT 1 FROM social_spaces ss WHERE ss.id=p.space_id AND ss.privacy='public' AND ss.status='active')) AND p.kind IN ('movie','series','channel') AND p.title LIKE ? ORDER BY p.created_at DESC LIMIT 8",(q,))]
         else:raise error('Busca inválida.')
         return jsonify(items=items)
 

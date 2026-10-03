@@ -1,4 +1,4 @@
-/* VYRA motion direction: cinematic depth, continuous light and spring interaction.
+/* Flix motion direction: cinematic depth, continuous light and spring interaction.
    All enhancements are opt-in through .vx-enabled; content remains usable without JS. */
 :root{--vx-ease:cubic-bezier(.16,1,.3,1);--vx-spring:cubic-bezier(.22,1.4,.36,1);--vx-accent:#ff294c}
 .vx-enabled:not(.vx-paused) .vx-pending{opacity:0}

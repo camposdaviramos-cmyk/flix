@@ -39,7 +39,7 @@ class CommunityTests(unittest.TestCase):
         self.call(self.b,p+'/comments',{'body':'<script>bad</script>'})
         d=self.a.get('/api'+p).json;self.assertEqual(d['post']['likes'],1);self.assertEqual(d['post']['views'],1)
         self.assertEqual(d['comments'][0]['body'],'<script>bad</script>');self.assertNotIn('email',d['post'])
-        cid=d['comments'][0]['id'];self.assertEqual(self.call(self.a,'/community/comments/'+str(cid),m='DELETE').status_code,403)
+        cid=d['comments'][0]['id'];self.assertEqual(self.call(self.c,'/community/comments/'+str(cid),m='DELETE').status_code,403);self.assertEqual(self.call(self.a,'/community/comments/'+str(cid),m='DELETE').status_code,200)
         self.assertEqual(self.call(self.b,p,{'kind':'news','title':'bad'},'PATCH').status_code,403)
         self.assertEqual(self.call(self.b,p,m='DELETE').status_code,403)
         self.assertEqual(self.call(self.a,p,m='DELETE').status_code,200)
@@ -106,7 +106,7 @@ class CommunityTests(unittest.TestCase):
         self.assertEqual(self.admin.get('/api/admin/community').json['counts']['open_reports'],0)
         self.call(self.admin,'/admin/community/posts/'+pid,{'action':'publish'},'PATCH');self.assertEqual(self.a.get('/api/community/posts/'+pid).status_code,200)
     def test_host_offline_pauses_and_moderation_removes_source(self):
-        pid=self.post();path=self.room(post_id=pid,approval=False);self.call(self.b,path+'/join')
+        pid=self.post();path=self.room(post_id=pid,approval=False,permanent=True);self.call(self.b,path+'/join')
         self.call(self.a,path+'/playback',{'position':25,'paused':False,'revision':1},'PATCH')
         self.call(self.a,path+'/leave')
         r=self.call(self.b,path+'/poll').json['room'];self.assertEqual(r['paused'],1);self.assertFalse(r['host_online'])

@@ -79,6 +79,10 @@ def migrate(db):
     CREATE INDEX IF NOT EXISTS idx_jump_signals_created ON jump_signals(created_at);
     ''')
 
+    if 'camera' not in {r[1] for r in db.execute('PRAGMA table_info(jump_members)')}:db.execute('ALTER TABLE jump_members ADD COLUMN camera INTEGER NOT NULL DEFAULT 0')
+    columns={r[1] for r in db.execute('PRAGMA table_info(jump_rooms)')}
+    if 'permanent' not in columns:db.execute('ALTER TABLE jump_rooms ADD COLUMN permanent INTEGER NOT NULL DEFAULT 0')
+
 
 def register_jump(app, db, auth, data, error, playback_item, public_user):
     def transaction():
@@ -87,11 +91,14 @@ def register_jump(app, db, auth, data, error, playback_item, public_user):
 
     def cleanup():
         now = time.time()
+        for r in db().execute("SELECT r.*,m.seen_at FROM jump_rooms r LEFT JOIN jump_members m ON m.room_id=r.id AND m.user_id=r.host_id WHERE r.permanent=1 AND r.paused=0 AND (m.user_id IS NULL OR m.seen_at<?)",(now-PRESENCE,)).fetchall():
+            end=min(now,r['seen_at']+PRESENCE) if r['seen_at'] else now
+            db().execute('UPDATE jump_rooms SET paused=1,position=?,revision=revision+1,updated_at=? WHERE id=?',(r['position']+max(0,end-r['updated_at']),now,r['id']))
         db().execute('DELETE FROM jump_members WHERE seen_at<? OR user_id IN (SELECT id FROM users WHERE status!=\'active\' OR (role!=\'admin\' AND expires_at<=?))', (now-PRESENCE, now))
-        db().execute('DELETE FROM jump_rooms WHERE NOT EXISTS (SELECT 1 FROM jump_members m WHERE m.room_id=jump_rooms.id)')
+        db().execute('DELETE FROM jump_rooms WHERE permanent=0 AND NOT EXISTS (SELECT 1 FROM jump_members m WHERE m.room_id=jump_rooms.id)')
         db().execute('DELETE FROM jump_signals WHERE created_at<?', (now-90,))
         db().execute("UPDATE jump_requests SET status='expired' WHERE status IN ('pending','approved') AND (seen_at<? OR user_id IN (SELECT id FROM users WHERE status!='active' OR (role!='admin' AND expires_at<=?)))", (now-REQUEST_TTL,now))
-        for room in db().execute('SELECT * FROM jump_rooms WHERE NOT EXISTS (SELECT 1 FROM jump_members m WHERE m.room_id=jump_rooms.id AND m.user_id=jump_rooms.host_id)').fetchall():
+        for room in db().execute('SELECT * FROM jump_rooms WHERE permanent=0 AND NOT EXISTS (SELECT 1 FROM jump_members m WHERE m.room_id=jump_rooms.id AND m.user_id=jump_rooms.host_id)').fetchall():
             host = db().execute('SELECT user_id FROM jump_members WHERE room_id=? ORDER BY joined_at,user_id LIMIT 1', (room['id'],)).fetchone()
             if host:
                 db().execute('UPDATE jump_rooms SET host_id=?,revision=revision+1 WHERE id=?', (host[0], room['id']))
@@ -109,7 +116,7 @@ def register_jump(app, db, auth, data, error, playback_item, public_user):
         room = dict(room_for(rid))
         room['server_time'] = time.time()
         room['requests'] = [dict(r) for r in db().execute("SELECT u.id,u.name,u.username,q.created_at FROM jump_requests q JOIN users u ON u.id=q.user_id WHERE q.room_id=? AND q.status='pending' ORDER BY q.created_at,u.id", (rid,))] if room['host_id']==g.user['id'] else []
-        room['members'] = [dict(r) for r in db().execute('SELECT u.id,u.name,u.username,m.mic FROM jump_members m JOIN users u ON u.id=m.user_id WHERE m.room_id=? ORDER BY m.joined_at,u.id', (rid,))]
+        room['members'] = [dict(r) for r in db().execute('SELECT u.id,u.name,u.username,m.mic,m.camera FROM jump_members m JOIN users u ON u.id=m.user_id WHERE m.room_id=? ORDER BY m.joined_at,u.id', (rid,))]
         room['messages'] = [dict(r) for r in db().execute('SELECT m.id,m.user_id,u.name,u.username,m.body,m.created_at FROM jump_messages m JOIN users u ON u.id=m.user_id WHERE room_id=? ORDER BY m.id DESC LIMIT 60', (rid,))][::-1]
         return room
 
@@ -219,7 +226,8 @@ def register_jump(app, db, auth, data, error, playback_item, public_user):
         rid=secrets.token_urlsafe(9)
         now=time.time()
         db().execute('INSERT INTO jump_rooms(id,host_id,content_id,episode_id,position,paused,updated_at,created_at) VALUES(?,?,?,?,?,?,?,?)',(rid,g.user['id'],cid,eid,pos,int(bool(d.get('paused',True))),now,now))
-        db().execute('INSERT INTO jump_members VALUES(?,?,?,?,0)',(rid,g.user['id'],now,now))
+        db().execute('UPDATE jump_rooms SET permanent=? WHERE id=?',(int(d.get('permanent') is True),rid))
+        db().execute('INSERT INTO jump_members(room_id,user_id,joined_at,seen_at,mic) VALUES(?,?,?,?,0)',(rid,g.user['id'],now,now))
         result=snapshot(rid)
         db().commit()
         return jsonify(room=result),201
@@ -229,7 +237,7 @@ def register_jump(app, db, auth, data, error, playback_item, public_user):
     def join(rid):
         transaction()
         cleanup()
-        room_for(rid,False)
+        r=room_for(rid,False)
         uid,now=g.user['id'],time.time()
         exists=db().execute('SELECT 1 FROM jump_members WHERE room_id=? AND user_id=?',(rid,uid)).fetchone()
         if exists:
@@ -243,8 +251,8 @@ def register_jump(app, db, auth, data, error, playback_item, public_user):
             return jsonify(status='rejected')
         if db().execute('SELECT COUNT(*) FROM jump_members WHERE room_id=?',(rid,)).fetchone()[0]>=ROOM_LIMIT:
             raise error('Esta sala está cheia (até 8 pessoas).',409)
-        if entry and entry['status']=='approved':
-            db().execute('INSERT INTO jump_members VALUES(?,?,?,?,0)',(rid,uid,now,now))
+        if r['host_id']==uid or (entry and entry['status']=='approved'):
+            db().execute('INSERT INTO jump_members(room_id,user_id,joined_at,seen_at,mic) VALUES(?,?,?,?,0)',(rid,uid,now,now))
             db().execute("UPDATE jump_requests SET status='joined',seen_at=? WHERE room_id=? AND user_id=?",(now,rid,uid))
             result=snapshot(rid)
             db().commit()
@@ -372,6 +380,15 @@ def register_jump(app, db, auth, data, error, playback_item, public_user):
         db().commit()
         return jsonify(ok=True)
 
+    @app.patch('/api/jump/rooms/<rid>/camera')
+    @auth(paid=True)
+    def camera(rid):
+        enabled=data().get('enabled')
+        if type(enabled) is not bool:raise error('Estado de câmera inválido.')
+        transaction();cleanup();room_for(rid)
+        if enabled and db().execute('SELECT COUNT(*) FROM jump_members WHERE room_id=? AND camera=1 AND user_id!=?',(rid,g.user['id'])).fetchone()[0]>=4:raise error('Esta sessão já tem quatro câmeras ligadas.',409)
+        db().execute('UPDATE jump_members SET camera=?,seen_at=? WHERE room_id=? AND user_id=?',(int(enabled),time.time(),rid,g.user['id']));result=snapshot(rid);db().commit();return jsonify(room=result)
+
     @app.post('/api/jump/rooms/<rid>/signals')
     @auth(paid=True)
     def signal(rid):
@@ -399,6 +416,14 @@ def register_jump(app, db, auth, data, error, playback_item, public_user):
         cleanup()
         db().commit()
         return jsonify(ok=True)
+
+    @app.patch('/api/jump/rooms/<rid>/settings')
+    @auth(paid=True)
+    def jump_settings(rid):
+        d=data();transaction();cleanup();r=room_for(rid)
+        if r['host_id']!=g.user['id']:raise error('Somente o anfitrião pode alterar a sala.',403)
+        if not isinstance(d.get('permanent'),bool):raise error('Escolha a duração da sala.')
+        db().execute('UPDATE jump_rooms SET permanent=?,revision=revision+1 WHERE id=?',(int(d['permanent']),rid));result=snapshot(rid);db().commit();return jsonify(room=result)
 
     @app.delete('/api/jump/rooms/<rid>')
     @auth(paid=True)

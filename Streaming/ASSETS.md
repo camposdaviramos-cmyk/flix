@@ -22,7 +22,7 @@ As URLs originais e IDs do Unsplash estão em `seed.py`. Os arquivos são armaze
 
 ## Ícones e marca
 
-Ícones SVG e marca VYRA criados em código no projeto. Fontes Outfit e DM Sans carregadas pelo Google Fonts, com fallback local sans-serif.
+Ícones SVG e identidade Flix criados em código no projeto. Fontes Outfit e DM Sans carregadas pelo Google Fonts, com fallback local sans-serif.
 
 ## Cenários dos jogos da comunidade — 03/10/2026
 
@@ -32,3 +32,12 @@ Criados com a ferramenta integrada de geração de imagens, seguindo a skill `im
 - `static/assets/community/artists-loft.png`: ateliê noturno com vista da cidade, luz índigo, bancada e moldura de madeira, pincéis e materiais artísticos nas bordas. Usado no jogo de desenho **Traço**.
 
 Originais em PNG, 1536 × 1024. Versões WebP de mesmo nome, qualidade 84, produzidas por conversão de formato com FFmpeg e usadas no site (aproximadamente 180 KB cada). O baralho, a lousa, os controles, as animações e a tipografia são elementos reais de HTML/CSS/canvas, separados da imagem.
+
+
+## Identidade Flix e aplicativo instalável
+
+O monograma **F**, o favicon SVG e os ícones `flix-icon-192.png`, `flix-icon-512.png`, `flix-maskable.png` e `flix-badge.png` foram desenhados em código para esta atualização. São formas geométricas originais, sem imagens de terceiros; o ícone adaptável mantém o símbolo na área segura. Usados no PWA, na Tela de Início e em notificações.
+
+## Editores de criação
+
+As prévias, colagens, textos, figurinhas de link, recortes e a faixa de câmeras são construídos em HTML/CSS/canvas, sem novos bitmaps gerados. O editor utiliza as mídias enviadas pelo usuário. Capas retornadas na busca de música vêm do YouTube e identificam vídeos reproduzidos pelo player oficial.
