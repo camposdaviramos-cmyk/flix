@@ -37,22 +37,35 @@ with tempfile.TemporaryDirectory() as folder:
             r=contexts[0].request.post(url+'/api/jump/rooms',headers=H,data={'content_id':'horizonte','position':8,'paused':True});assert r.ok,r.text();rid=r.json()['room']['id'];path=url+'/api/jump/rooms/'+rid
             for i in range(1,4):
                 contexts[i].request.post(path+'/join',headers=H,data={});contexts[0].request.patch(path+'/requests/'+uids[i],headers=H,data={'decision':'approve'});assert contexts[i].request.post(path+'/join',headers=H,data={}).ok
-            for p in pages:p.goto(url+'/sala/'+rid);until(p,'player?.ready && player.voiceReady');p.get_by_role('button',name='Fechar painel',exact=True).click();p.locator('[data-jump=camera]').click()
+            for p in pages:
+                p.goto(url+'/sala/'+rid);until(p,'player?.ready && player.voiceReady')
+                if p==host:p.get_by_role('button',name='Fechar painel',exact=True).click()
+                else:
+                    expect(p.locator('.rm-jump-tabs [data-jm=chat]')).to_have_attribute('aria-current','page')
+                    expect(p.locator('.fj-chat-form')).to_be_visible()
+                    assert not p.evaluate('document.activeElement.matches("input,textarea")')
+                p.locator('[data-jump=camera]').click()
             for p in pages:
                 until(p,"document.querySelectorAll('.fj-camera-rail video').length===4 && [...document.querySelectorAll('.fj-camera-rail video')].every(v=>v.videoWidth>0)",timeout=40000)
-                assert p.evaluate("Math.abs(document.querySelector('.fj-camera-rail').getBoundingClientRect().height-document.querySelector('.video-wrap').getBoundingClientRect().height)<3")
-                assert p.evaluate("document.querySelector('.fj-camera-rail').getBoundingClientRect().bottom<=document.querySelector('.video-wrap').getBoundingClientRect().bottom+1")
+                assert p.evaluate("Math.abs(document.querySelector('.fj-camera-rail').getBoundingClientRect().height-(document.querySelector('.rm-jump-visual')||document.querySelector('.video-wrap')).getBoundingClientRect().height)<3")
+                assert p.evaluate("document.querySelector('.fj-camera-rail').getBoundingClientRect().bottom<=(document.querySelector('.rm-jump-visual')||document.querySelector('.video-wrap')).getBoundingClientRect().bottom+1")
             host.screenshot(path=str(OUT/'experience-jump-four-cameras-desktop.png'));guest.screenshot(path=str(OUT/'experience-jump-four-cameras-mobile.png'))
             fourth.locator('[data-jump=camera]').click();expect(host.locator('.fj-camera-rail video')).to_have_count(3,timeout=15000)
             for p in pages:p.goto(url+'/comunidade');until(p,"streams.every(s=>s.getTracks().every(t=>t.readyState==='ended'))")
             r=contexts[0].request.post(url+'/api/community/rooms',headers=H,data={'kind':'watch','title':'Sessão em grupo','url':'https://media.example.test/video.mp4','approval':False});assert r.ok,r.text();rid=r.json()['room']['id'];roompath=url+'/api/community/rooms/'+rid
             for p in pages[:3]:
-                p.route('https://media.example.test/**',lambda route:route.fulfill(path=str(ROOT/'static/assets/sintel-trailer.mp4'),content_type='video/mp4',headers={'Access-Control-Allow-Origin':'*'}));p.goto(url+'/comunidade/sala/'+rid);p.get_by_role('button',name='Ativar câmera',exact=True).click()
+                p.route('https://media.example.test/**',lambda route:route.fulfill(path=str(ROOT/'static/assets/sintel-trailer.mp4'),content_type='video/mp4',headers={'Access-Control-Allow-Origin':'*'}));p.goto(url+'/comunidade/sala/'+rid)
+                if p!=host:p.locator('.rm-header [data-rm=people]').click()
+                p.locator('.cm-room-toolbar [data-cm=room-camera]').click()
+                if p!=host:p.locator('.rm-tabs [data-tab=chat]').click()
             for p in pages[:3]:until(p,"document.querySelectorAll('#cm-camera-stage video').length===3&&[...document.querySelectorAll('#cm-camera-stage video')].every(v=>v.videoWidth>0)",timeout=40000)
             host.screenshot(path=str(OUT/'experience-community-cameras-desktop.png'));guest.screenshot(path=str(OUT/'experience-community-cameras-mobile.png'))
             # The two audience members exchange camera tracks directly without receiving a microphone seat.
             members=contexts[1].request.post(roompath+'/poll',headers=H,data={'camera':True}).json()['room']['members'];assert next(m for m in members if m['id']==uids[1])['seat'] is None
-            for p in pages[:3]:p.get_by_role('button',name='Desligar câmera',exact=True).click()
+            for p in pages[:3]:
+                if p!=host:p.locator('.rm-header [data-rm=people]').click()
+                p.locator('.cm-room-toolbar [data-cm=room-camera]').click()
+                if p!=host:p.locator('.rm-tabs [data-tab=chat]').click()
             host.locator('[data-game=create][data-kind=colors]').click();guest.get_by_role('button',name='Aceitar e jogar',exact=True).click();expect(host.locator('.fg-player')).to_have_count(2);host.get_by_role('button',name='Iniciar partida',exact=False).click();expect(host.locator('.fg-hand .fg-card')).to_have_count(7)
             expect(host.locator('.cm-room-heading')).not_to_be_visible();expect(host.locator('.cx-room-widget>summary')).to_be_visible();host.locator('.cx-room-widget>summary').click();expect(host.locator('.cx-room-widget #cm-seats')).to_be_visible();host.locator(f'[data-audience="{uids[1]}"] [data-cm=room-promote]').click();expect(guest.locator('[data-game=mic]')).to_be_enabled(timeout=15000);host.locator('[data-cm=room-widget-close]').click()
             # A request opens the compact widget without leaving the game.

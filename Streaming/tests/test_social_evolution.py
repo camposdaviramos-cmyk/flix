@@ -100,7 +100,7 @@ class EvolutionTests(unittest.TestCase):
         self.call(self.admin,'/admin/spaces/'+sid,{'status':'active'},'PATCH');self.assertEqual(self.a.get('/api/community/posts/'+pid).status_code,200)
 
     def test_editor_drawings_mentions_validation_and_expiration(self):
-        c={'layers':[{'type':'mention','user_id':self.ub['id'],'text':'@bruno'}],'drawings':[{'points':[[2,2],[40,70]],'color':'#ff5781','width':1}]}
+        c={'items':[{'url':'https://example.com/story.jpg','type':'image','duration':5}],'layers':[{'type':'mention','user_id':self.ub['id'],'text':'@bruno'}],'drawings':[{'points':[[2,2],[40,70]],'color':'#ff5781','width':1}]}
         r=self.call(self.a,'/community/stories',{'body':'Nosso cinema','composition':c});self.assertEqual(r.status_code,201,r.json);sid=r.json['id']
         story=self.b.get('/api/community/stories/'+sid).json['story'];self.assertEqual(story['composition']['drawings'][0]['points'],[[2,2],[40,70]]);self.assertEqual(story['composition']['layers'][0]['url'],'/comunidade/perfil/bruno')
         self.assertTrue(any(n['type']=='mention' for n in self.b.get('/api/hub/notifications').json['notifications']))

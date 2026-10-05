@@ -1,3 +1,4 @@
+import reel_studio
 """Creation formats, publication controls and explainable community recommendations."""
 import hashlib
 import html
@@ -79,9 +80,11 @@ def composition(db,value,error,external,user):
         resolved=community_social.local_asset(url,db,error,owner=user) or external(url,error)
         if kind not in ('image','video') or (kind=='video' and resolved[1]!='video') or (kind=='image' and resolved[1] not in ('image','link')):raise error('Use fotos ou vídeos MP4/WebM na edição.')
         start=number(item.get('start',0),0,36000,error);duration=number(item.get('duration',5),1,180,error)
-        out['items'].append({'url':resolved[0],'type':kind,'start':start,'duration':duration,'fit':item.get('fit') if item.get('fit') in ('cover','contain') else 'cover','x':number(item.get('x',50),0,100,error),'y':number(item.get('y',50),0,100,error),'zoom':number(item.get('zoom',1),1,3,error),'volume':number(item.get('volume',1),0,1,error),'speed':number(item.get('speed',1),.25,3,error),'brightness':number(item.get('brightness',1),.5,1.5,error),'contrast':number(item.get('contrast',1),.5,1.5,error),'transition':item.get('transition') if item.get('transition') in ('none','fade','slide') else 'none','filter':item.get('filter') if item.get('filter') in ('none','warm','cool','mono','vivid') else 'none'})
+        out['items'].append({'url':resolved[0],'type':kind,'start':start,'duration':duration,'fit':item.get('fit') if item.get('fit') in ('cover','contain') else 'cover','x':number(item.get('x',50),0,100,error),'y':number(item.get('y',50),0,100,error),'zoom':number(item.get('zoom',1),1,3,error),'volume':number(item.get('volume',1),0,1,error),'speed':number(item.get('speed',1),.25,3,error),'brightness':number(item.get('brightness',1),.5,1.5,error),'contrast':number(item.get('contrast',1),.5,1.5,error),'transition':item.get('transition') if item.get('transition') in ('none','fade','slide') else 'none','filter':item.get('filter') if item.get('filter') in ('none','warm','cool','mono','vivid','cinema','vintage') else 'none'})
+        out['items'][-1].update(panX=number(item.get('panX',0),-5,5,error),panY=number(item.get('panY',0),-5,5,error),saturation=number(item.get('saturation',1),0,2,error),filterIntensity=number(item.get('filterIntensity',1),0,1,error),temperature=number(item.get('temperature',0),-1,1,error),sharpness=number(item.get('sharpness',0),0,1,error),exposure=number(item.get('exposure',0),-1,1,error))
+    seen_layers=set()
     for layer in layers:
-        if not isinstance(layer,dict) or layer.get('type') not in ('text','link','emoji','mention'):raise error('Elemento inválido.')
+        if not isinstance(layer,dict) or layer.get('type') not in ('text','link','emoji','mention','gif','location','hashtag','clock','poll','question'):raise error('Elemento inválido.')
         typ=layer['type'];text=plain(layer.get('text',''),240,error,1);color=layer.get('color','#ffffff');bg=layer.get('background','#141016')
         if not re.fullmatch('#[0-9a-fA-F]{6}',str(color)) or not re.fullmatch('#[0-9a-fA-F]{6}',str(bg)):raise error('Cor inválida.')
         obj={'type':typ,'text':text,'x':number(layer.get('x',50),0,100,error),'y':number(layer.get('y',50),0,100,error),'size':number(layer.get('size',28),14,72,error),'rotation':number(layer.get('rotation',0),-180,180,error),'color':color,'background':bg,'start':number(layer.get('start',0),0,1440,error),'end':number(layer.get('end',1440),0,1440,error)}
@@ -91,6 +94,19 @@ def composition(db,value,error,external,user):
             person=db.execute("SELECT id,username FROM users WHERE id=? AND status='active'",(layer.get('user_id'),)).fetchone()
             if not person:raise error('Pessoa indisponível para mencionar.')
             obj.update(user_id=person['id'],text='@'+person['username'],url='/comunidade/perfil/'+person['username'])
+        lid=layer.get('id') or secrets.token_hex(8)
+        if not isinstance(lid,str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,64}',lid) or lid in seen_layers:raise error('Identificador de figurinha inválido.')
+        seen_layers.add(lid)
+        obj.update(id=lid,scale=number(layer.get('scale',1),.25,4,error),opacity=number(layer.get('opacity',1),0,1,error),font=layer.get('font') if layer.get('font') in ('sans','serif','mono','round','italic') else 'sans',align=layer.get('align') if layer.get('align') in ('left','center','right') else 'center',animation=layer.get('animation') if layer.get('animation') in ('none','fade','pop','pulse') else 'none',backgroundOpacity=number(layer.get('backgroundOpacity',1),0,1,error))
+        if typ=='gif':
+            asset=community_social.local_asset(layer.get('url'),db,error,owner=user)
+            if not asset or asset[1]!='image':raise error('Envie uma figurinha GIF do seu dispositivo.')
+            obj['url']=asset[0]
+        if typ=='poll':
+            options=layer.get('options')
+            if not isinstance(options,list) or not 2<=len(options)<=4:raise error('Use entre duas e quatro opções na enquete.')
+            obj['options']=[plain(v,60,error,1) for v in options]
+            if len(set(obj['options']))!=len(obj['options']):raise error('As opções da enquete devem ser diferentes.')
         out['layers'].append(obj)
     drawings=value.get('drawings',[])
     if not isinstance(drawings,list) or len(drawings)>40:raise error('Use até 40 traços no desenho.')
@@ -100,7 +116,7 @@ def composition(db,value,error,external,user):
         pts=line.get('points',[]);color=line.get('color','#ffffff');total+=len(pts) if isinstance(pts,list) else 0
         if not isinstance(pts,list) or not 2<=len(pts)<=500 or total>5000 or not re.fullmatch('#[0-9a-fA-F]{6}',str(color)):raise error('Desenho inválido ou muito extenso.')
         if any(not isinstance(p,list) or len(p)!=2 for p in pts):raise error('Ponto inválido.')
-        out['drawings'].append({'color':color,'width':number(line.get('width',1),.3,4,error),'points':[[number(p[0],0,100,error),number(p[1],0,100,error)] for p in pts]})
+        out['drawings'].append({'mode':line.get('mode') if line.get('mode') in ('pen','marker','neon') else 'pen','color':color,'width':number(line.get('width',1),.3,4,error),'points':[[number(p[0],0,100,error),number(p[1],0,100,error)] for p in pts]})
     music=value.get('music')
     if music:
         if not isinstance(music,dict):raise error('Música inválida.')
@@ -121,12 +137,13 @@ def save_composition(db,typ,target,value,expires=None):
         if typ=='post':
             p=db.execute('SELECT p.*,u.name FROM community_posts p JOIN users u ON u.id=p.user_id WHERE p.id=?',(target,)).fetchone()
             visible=not p['space_id'] or db.execute("SELECT 1 FROM social_spaces s WHERE s.id=? AND (s.privacy='public' OR EXISTS(SELECT 1 FROM social_space_members m WHERE m.space_id=s.id AND m.user_id=?))",(p['space_id'],layer['user_id'])).fetchone()
+            visible=visible and p['status']=='published' and reel_studio.visible(db,target,layer['user_id'])
             href='/comunidade/post/'+target
         else:
-            p=db.execute('SELECT s.*,u.name FROM community_stories s JOIN users u ON u.id=s.user_id WHERE s.id=?',(target,)).fetchone();visible=True;href='/comunidade?story='+target
+            p=db.execute('SELECT s.*,u.name FROM community_stories s JOIN users u ON u.id=s.user_id WHERE s.id=?',(target,)).fetchone();import story_studio;visible=story_studio.visible(db,target,layer['user_id']);href='/comunidade?story='+target
         if p and visible and p['user_id']!=layer['user_id']:
             db.execute("INSERT OR IGNORE INTO hub_notifications(user_id,actor_id,category,title,body,href,created_at,dedupe) VALUES(?,?,'social','Você foi mencionado',?,?,?,?)",(layer['user_id'],p['user_id'],p['name']+' mencionou você em um '+('story' if typ=='story' else 'reel'),href,time.time(),'composition-mention:'+typ+':'+target))
-    urls=[i['url'] for i in value['items']]+([value['music']['url']] if value['music'] else [])
+    urls=[i['url'] for i in value['items']]+[l['url'] for l in value['layers'] if l['type']=='gif']+([value['music']['url']] if value['music'] else [])
     for url in urls:
         if url.startswith('/api/community/assets/'):
             if expires and not community_social.permanent_asset(db,url):db.execute('UPDATE community_assets SET expires_at=? WHERE id=?',(expires,url.rsplit('/',1)[-1]))
@@ -154,7 +171,7 @@ def notify_mentions(db,cid,p,body,actor):
         if not r or r[0]==actor:continue
         if p['space_id'] and not db.execute("SELECT 1 FROM social_spaces ss WHERE ss.id=? AND (ss.privacy='public' OR EXISTS(SELECT 1 FROM social_space_members sm WHERE sm.space_id=ss.id AND sm.user_id=?))",(p['space_id'],r[0])).fetchone():continue
         new=db.execute('INSERT OR IGNORE INTO community_comment_mentions VALUES(?,?)',(cid,r[0]))
-        if new.rowcount and p['status']=='published' and not p['hide_comments']:
+        if new.rowcount and reel_studio.visible(db,p['id'],r[0]) and p['status']=='published' and not p['hide_comments']:
             db.execute("INSERT OR IGNORE INTO hub_notifications(user_id,actor_id,category,title,body,href,created_at,dedupe) VALUES(?,?,'social','Você foi mencionado',?,'/comunidade/post/'||?,?,'comment-mention:'||?)",(r[0],actor,'Uma conversa em '+p['title']+' mencionou você.',p['id'],time.time(),str(cid)))
 
 
@@ -212,6 +229,12 @@ def register(app,db,auth,data,error,post):
             if key in d:
                 if type(d[key]) is not bool:raise error('Preferência inválida.')
                 db().execute(f'UPDATE community_posts SET {key}=? WHERE id=?',(int(d[key]),pid))
+        if p['kind']=='reel':
+            opts=reel_studio.get_options(db(),pid)
+            if d.get('status')=='private':opts['audience']='private'
+            elif d.get('status')=='published' and opts['audience']=='private':opts['audience']='public'
+            if 'comments_disabled' in d:opts['comments']='off' if d['comments_disabled'] else 'all'
+            reel_studio.save(db(),pid,opts,g.user['id'])
         db().commit();return jsonify(ok=True)
 
     @app.patch('/api/community/comments/<int:cid>')

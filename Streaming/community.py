@@ -1,3 +1,4 @@
+import reel_studio
 """Community publishing, profiles, moderation and persistent external-media rooms."""
 import base64
 import ipaddress
@@ -67,10 +68,13 @@ def migrate(db):
     room_lifecycle.migrate(db)
     social_hub.migrate(db)
     community_experience.migrate(db)
+    import story_studio
+    story_studio.migrate(db)
     social_spaces.migrate(db)
     flix_music.migrate(db)
     flix_wallet.migrate(db)
     room_experience.migrate(db)
+    reel_studio.migrate(db)
 
 
 def external_url(value, error, media=False, optional=False):
@@ -151,6 +155,7 @@ def register_community(app, db, auth, data, error):
         r=db().execute("SELECT p.* FROM community_posts p JOIN users u ON u.id=p.user_id WHERE p.id=? AND u.status='active'",(pid,)).fetchone()
         if not r or (r['status']!='published' and not((r['status'] in ('private','archived') or owner) and (r['user_id']==uid() or g.user['role']=='admin'))):
             raise error('Publicação não encontrada.',404)
+        if g.user['role']!='admin' and not reel_studio.visible(db(),pid,uid()):raise error('Publicação indisponível.',404)
         if r['space_id']:
             sp=db().execute("SELECT privacy,status FROM social_spaces WHERE id=?",(r['space_id'],)).fetchone()
             if not sp or sp['status']!='active' or (sp['privacy']=='private' and not social_spaces.space_role(db(),r['space_id'],uid()) and g.user['role']!='admin'):raise error('Publicação indisponível.',404)
@@ -165,6 +170,8 @@ def register_community(app, db, auth, data, error):
         space_visibility="(p.space_id IS NULL OR EXISTS(SELECT 1 FROM social_spaces ss WHERE ss.id=p.space_id AND ss.status='active' AND (ss.privacy='public' OR EXISTS(SELECT 1 FROM social_space_members sm WHERE sm.space_id=ss.id AND sm.user_id=?))))"
         space_args=(uid(),)
         if g.user['role']=='admin' and include_own:space_visibility='1';space_args=()
+        reel_visibility=reel_studio.visibility();reel_args=(uid(),uid(),uid())
+        if include_own and g.user['role']=='admin':reel_visibility='1';reel_args=()
         result=rows(f"""SELECT p.*,u.name,u.username,u.verified,COALESCE(pr.avatar,'') avatar,
         (SELECT COUNT(*) FROM community_likes l WHERE l.post_id=p.id) likes,
         (SELECT COUNT(*) FROM community_views v WHERE v.post_id=p.id) views,
@@ -175,11 +182,12 @@ def register_community(app, db, auth, data, error):
         EXISTS(SELECT 1 FROM community_follows WHERE following=p.user_id AND follower=?) is_following,
         EXISTS(SELECT 1 FROM community_likes l WHERE l.post_id=p.id AND l.user_id=?) liked
         FROM community_posts p JOIN users u ON u.id=p.user_id LEFT JOIN community_profiles pr ON pr.user_id=u.id
-        WHERE {visibility} AND u.status='active' AND {space_visibility} AND ({where}) ORDER BY {sorting} LIMIT 21 OFFSET ?""",(uid(),uid(),uid(),*extra,*space_args,*args,*sort_args,offset))
+        WHERE {visibility} AND {reel_visibility} AND u.status='active' AND {space_visibility} AND ({where}) ORDER BY {sorting} LIMIT 21 OFFSET ?""",(uid(),uid(),uid(),*extra,*reel_args,*space_args,*args,*sort_args,offset))
         for p in result:
             p['reactions']=community_social.reaction_state(db(),'post',p['id'],uid())
             community_publishing.enrich(db(),p)
             community_experience.enrich(db(),p,uid())
+            reel_studio.enrich(db(),p,uid())
             social_spaces.enrich(db(),p)
             p['music']=flix_music.track_for_post(db(),p)
         return result
@@ -231,6 +239,7 @@ def register_community(app, db, auth, data, error):
             where.append('p.user_id IN (SELECT following FROM community_follows WHERE follower=?)');args.append(uid())
         elif kind!='all':
             where.append('p.kind=?');args.append(kind)
+        if kind in ('all','following') and not request.args.get('user') and not request.args.get('mine'):where.append("(p.kind!='reel' OR p.reel_feed=1)")
         if q:
             where.append('(p.title LIKE ? OR p.body LIKE ? OR u.username LIKE ?)');args += ['%'+q+'%']*3
         if request.args.get('user'):
@@ -248,6 +257,8 @@ def register_community(app, db, auth, data, error):
         result=post_list(' AND '.join(where),args,offset,include_own=own,order=order)
         return jsonify(posts=result[:20],more=len(result)>20)
 
+    reel_studio.register(app,db,auth,data,error,post,post_list)
+
     @app.route('/api/community/posts',methods=['POST'])
     @app.route('/api/community/posts/<pid>',methods=['PATCH','DELETE','GET'])
     @auth()
@@ -261,7 +272,12 @@ def register_community(app, db, auth, data, error):
         if request.method=='DELETE':
             db().execute("UPDATE community_posts SET status='removed' WHERE id=?",(pid,))
         else:
-            d=data();kind=d.get('kind')
+            d=data();kind=d.get('kind');reel_options=None
+            request_key=d.get('reel_request_id','')
+            if request_key and (not isinstance(request_key,str) or not re.fullmatch(r'[A-Za-z0-9_-]{16,64}',request_key)):raise error('Identificador de publicação inválido.')
+            if kind=='reel' and request_key and not old:
+                existing=db().execute('SELECT post_id FROM reel_publish_keys WHERE user_id=? AND request_id=?',(uid(),request_key)).fetchone()
+                if existing:db().commit();return jsonify(id=existing[0],ok=True),200
             sid=d.get('space_id',old['space_id'] if old else None)
             if old and sid!=old['space_id']:raise error('Edite a publicação no espaço em que ela foi criada.')
             if sid:social_spaces.post_permission(db(),sid,uid(),error)
@@ -272,6 +288,8 @@ def register_community(app, db, auth, data, error):
             if kind in ('movie','series') and ('genre' in d or 'episodes' in d):
                 d['id']=pid;genre,d['url'],episodes=community_experience.validate_catalog(db(),d,error,external_url)
             comp=community_experience.composition(db(),d['composition'],error,external_url,uid()) if d.get('composition') is not None else None
+            if kind=='reel':
+                reel_studio.validate(comp,body,error);reel_options=reel_studio.options(db(),d.get('reel_options',reel_studio.get_options(db(),pid) if old else {}),uid(),error)
             if comp is not None and kind!='reel':raise error('Use o editor de reels para esta composição.')
             meta,assets=community_publishing.validate(d,db(),error,external_url) if 'document' in d else (None,[])
             source=d.get('url') or next((b['url'] for b in (meta or {}).get('document',[]) if b['type'] in ('video','audio')),'')
@@ -284,7 +302,7 @@ def register_community(app, db, auth, data, error):
             else:
                 limit('community_posts','user_id=?',(uid(),),15,3600)
                 pid=secrets.token_urlsafe(9)
-                db().execute('INSERT INTO community_posts(id,user_id,kind,title,body,url,media_type,poster,created_at,updated_at,space_id) VALUES(?,?,?,?,?,?,?,?,?,?,?)',(pid,uid(),kind,title,body,url,media,poster,time.time(),time.time(),sid))
+                db().execute('INSERT INTO community_posts(id,user_id,kind,title,body,url,media_type,poster,created_at,updated_at,space_id,reel_audience,reel_feed,status) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)',(pid,uid(),kind,title,body,url,media,poster,time.time(),time.time(),sid,(reel_options or {}).get('audience','public'),int((reel_options or {}).get('reuse_feed',True)),'private' if (reel_options or {}).get('audience')=='private' else 'published'))
             if d.get('music_id'):
                 mt=db().execute('SELECT * FROM music_tracks WHERE id=?',(d['music_id'],)).fetchone()
                 if not mt or kind!='music' or mt['url']!=url:raise error('Música inválida.')
@@ -294,7 +312,13 @@ def register_community(app, db, auth, data, error):
                 db().execute('UPDATE community_posts SET genre=? WHERE id=?',(genre,pid))
                 db().execute('DELETE FROM community_episodes WHERE post_id=?',(pid,))
                 for e in episodes:db().execute('INSERT INTO community_episodes VALUES(?,?,?,?,?,?)',(e['id'],pid,e['season'],e['number'],e['title'],e['url']))
+            if reel_options is not None:
+                reel_studio.save(db(),pid,reel_options,uid())
+                if old and old['reel_audience']=='private' and reel_options['audience']!='private':db().execute("UPDATE community_posts SET status='published' WHERE id=?",(pid,))
+                if reel_options['audience']=='private':db().execute("UPDATE community_posts SET status='private' WHERE id=?",(pid,))
+                if request_key and not old:db().execute('INSERT INTO reel_publish_keys VALUES(?,?,?)',(uid(),request_key,pid))
             if comp is not None:community_experience.save_composition(db(),'post',pid,comp)
+            if reel_options is not None:reel_studio.notify_people(db(),pid)
             db().execute('DELETE FROM community_feed_order WHERE user_id=?',(uid(),))
             if meta is not None:community_publishing.save(db(),pid,meta,assets)
             if d.get('draft_id'):db().execute('DELETE FROM community_drafts WHERE id=? AND user_id=?',(str(d['draft_id']),uid()))
@@ -338,7 +362,7 @@ def register_community(app, db, auth, data, error):
     @auth()
     def community_comment(pid):
         body=text(data(),'body',1500,1);tx();p=post(pid)
-        if p['comments_disabled']:raise error('O autor desativou os comentários desta publicação.',403)
+        if not reel_studio.can_comment(db(),p,uid()):raise error('Os comentários desta publicação estão restritos pelo autor.',403)
         limit('community_comments','user_id=?',(uid(),),12,60)
         cid=db().execute('INSERT INTO community_comments(post_id,user_id,body,created_at) VALUES(?,?,?,?)',(pid,uid(),body,time.time())).lastrowid
         community_experience.notify_mentions(db(),cid,p,body,uid());db().commit()
@@ -504,7 +528,7 @@ def register_community(app, db, auth, data, error):
     def community_room_preview(rid):
         r=room(rid)
         host=person(r['host_id']);m=db().execute('SELECT status FROM community_members WHERE room_id=? AND user_id=?',(rid,uid())).fetchone()
-        return jsonify(room={k:r[k] for k in ('id','title','description','kind','host_id','approval','cover','permanent','privacy','activity')},host=dict(host),status=m[0] if m else 'new')
+        return jsonify(room={k:r[k] for k in ('id','title','description','kind','host_id','approval','cover','permanent','privacy','activity','media_type','music_current')},host=dict(host),status=m[0] if m else 'new')
 
     @app.post('/api/community/rooms/<rid>/join')
     @auth()
@@ -543,7 +567,7 @@ def register_community(app, db, auth, data, error):
                     if seat is None:raise error(f'Os {maximum} assentos estão ocupados. Retorne alguém à plateia primeiro.',409)
                     db().execute("UPDATE community_members SET seat=?,mic=0,camera=0,stage_request='' WHERE room_id=? AND user_id=?",(seat,rid,other))
             elif decision=='reject_stage':db().execute("UPDATE community_members SET stage_request='' WHERE room_id=? AND user_id=?",(rid,other))
-            elif decision=='demote':db().execute('UPDATE community_members SET seat=NULL,mic=0,camera=0 WHERE room_id=? AND user_id=?',(rid,other))
+            elif decision=='demote':db().execute("UPDATE community_members SET seat=NULL,mic=0,camera=0,stage_request='' WHERE room_id=? AND user_id=?",(rid,other))
             else:db().execute('UPDATE community_members SET mic_blocked=?,mic=0 WHERE room_id=? AND user_id=?',(int(decision=='mute'),rid,other))
         else:raise error('Decisão inválida.')
         result=snapshot(rid);db().commit();return jsonify(room=result)
@@ -552,7 +576,7 @@ def register_community(app, db, auth, data, error):
     @auth()
     def live_stage(rid):
         d=data();tx();r=room(rid,True);clean_seats(rid)
-        if r['kind']!='live' or r['host_id']==uid():raise error('Esta ação é para convidados de uma live.')
+        if r['host_id']==uid():raise error('O anfitrião já ocupa o palco.')
         me=db().execute('SELECT * FROM community_members WHERE room_id=? AND user_id=?',(rid,uid())).fetchone()
         if me['seen_at']<time.time()-45:raise error('Entre novamente na sala.',409)
         action=d.get('action')
@@ -563,8 +587,9 @@ def register_community(app, db, auth, data, error):
         elif action=='accept':
             if me['stage_request']!='invited':raise error('O convite não está mais disponível.',409)
             occupied={v[0] for v in db().execute('SELECT seat FROM community_members WHERE room_id=? AND seat IS NOT NULL',(rid,))}
-            seat=next((n for n in range(2,5) if n not in occupied),None)
-            if seat is None:raise error('A live já tem 4 participantes. Aguarde uma vaga.',409)
+            maximum=4 if r['kind']=='live' else 8
+            seat=next((n for n in range(2,maximum+1) if n not in occupied),None)
+            if seat is None:raise error(f'Os {maximum} assentos estão ocupados. Aguarde uma vaga.',409)
             db().execute("UPDATE community_members SET seat=?,stage_request='',mic=0,camera=0,seen_at=? WHERE room_id=? AND user_id=?",(seat,time.time(),rid,uid()))
         elif action in ('cancel','decline','leave'):
             db().execute("UPDATE community_members SET stage_request='',seat=NULL,mic=0,camera=0 WHERE room_id=? AND user_id=?",(rid,uid()))
@@ -648,7 +673,9 @@ def register_community(app, db, auth, data, error):
     @app.delete('/api/community/rooms/<rid>')
     @auth()
     def community_close(rid):
-        tx();room(rid,host=True);db().execute("UPDATE community_rooms SET status='closed' WHERE id=?",(rid,));db().commit();return jsonify(ok=True)
+        tx();room(rid,host=True)
+        for game in db().execute("SELECT id FROM community_games WHERE room_id=? AND status='lobby'",(rid,)):flix_wallet.refund_game(db(),game['id'])
+        db().execute("UPDATE community_rooms SET status='closed' WHERE id=?",(rid,));db().commit();return jsonify(ok=True)
 
     @app.post('/api/community/rooms/<rid>/queue')
     @auth()
@@ -659,6 +686,30 @@ def register_community(app, db, auth, data, error):
         community_social.retain_assets(db(),url)
         db().execute('INSERT INTO community_queue(room_id,title,url,media_type,created_at) VALUES(?,?,?,?,?)',(rid,title,url,media,time.time()));db().commit();return jsonify(ok=True),201
 
+    @app.post('/api/community/rooms/<rid>/queue/advance')
+    @auth()
+    def community_advance(rid):
+        d=data();tx();r=room(rid,True,True)
+        epoch=d.get('media_epoch')
+        if type(epoch)!=int:raise error('Identificação de reprodução inválida.')
+        # Playback heartbeats change revision; this token identifies the actual media session.
+        if epoch!=r['media_epoch']:
+            result=snapshot(rid);db().commit();return jsonify(room=result,advanced=False)
+        if not r['url']:
+            result=snapshot(rid);db().commit();return jsonify(room=result,advanced=False)
+        now=time.time()
+        if r['kind']=='music' and r['music_current']:
+            import flix_music
+            advanced=flix_music.advance_finished(db(),r,now)
+        else:
+            q=db().execute('SELECT * FROM community_queue WHERE room_id=? ORDER BY position,id LIMIT 1',(rid,)).fetchone()
+            advanced=bool(q)
+            if q:
+                db().execute('UPDATE community_rooms SET url=?,media_type=?,post_id=NULL,position=0,paused=0,music_current=NULL,media_epoch=media_epoch+1,revision=revision+1,updated_at=? WHERE id=?',(q['url'],q['media_type'],now,rid))
+                db().execute('DELETE FROM community_queue WHERE id=?',(q['id'],))
+            else:db().execute('UPDATE community_rooms SET position=0,paused=1,media_epoch=media_epoch+1,revision=revision+1,updated_at=? WHERE id=?',(now,rid))
+        result=snapshot(rid);db().commit();return jsonify(room=result,advanced=advanced)
+
     @app.route('/api/community/rooms/<rid>/queue/<int:item>',methods=['POST','DELETE'])
     @auth()
     def community_queue(rid,item):
@@ -666,7 +717,7 @@ def register_community(app, db, auth, data, error):
         if r['kind']=='music' and r['music_current']:raise error('Use a fila da sala musical.',409)
         q=db().execute('SELECT * FROM community_queue WHERE id=? AND room_id=?',(item,rid)).fetchone()
         if not q:raise error('Item não encontrado.',404)
-        if request.method=='POST':db().execute('UPDATE community_rooms SET url=?,media_type=?,post_id=NULL,position=0,paused=1,revision=revision+1,updated_at=? WHERE id=?',(q['url'],q['media_type'],time.time(),rid))
+        if request.method=='POST':db().execute('UPDATE community_rooms SET url=?,media_type=?,post_id=NULL,position=0,paused=1,media_epoch=media_epoch+1,revision=revision+1,updated_at=? WHERE id=?',(q['url'],q['media_type'],time.time(),rid))
         db().execute('DELETE FROM community_queue WHERE id=?',(item,));db().commit();return jsonify(ok=True)
 
     @app.get('/api/admin/community')

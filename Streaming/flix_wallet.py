@@ -25,6 +25,16 @@ def migrate(db):
         db.execute('INSERT OR IGNORE INTO coin_gifts(id,name,symbol,coins) VALUES(?,?,?,?)',gift)
     for plugin in [('colors','Cores','Cartas, estratégia e um último UNO!','game','colors'),('draw','Traço','Desenhe e descubra com a turma.','game','draw')]:
         db.execute('INSERT OR IGNORE INTO room_plugins(id,name,description,kind,engine) VALUES(?,?,?,?,?)',plugin)
+    db.executescript('''
+    CREATE TRIGGER IF NOT EXISTS coin_cancel_lobby AFTER UPDATE OF status ON community_games WHEN OLD.status='lobby' AND NEW.status='cancelled' BEGIN
+      INSERT OR IGNORE INTO coin_ledger(user_id,amount,reason,reference,created_at)
+      SELECT user_id,-amount,'Partida cancelada antes de iniciar','refund:'||reference,unixepoch() FROM coin_ledger WHERE reference LIKE 'game:'||OLD.id||':%' AND amount<0;
+    END;
+    CREATE TRIGGER IF NOT EXISTS coin_close_room AFTER UPDATE OF status ON community_rooms WHEN OLD.status='open' AND NEW.status='closed' BEGIN
+      INSERT OR IGNORE INTO coin_ledger(user_id,amount,reason,reference,created_at)
+      SELECT l.user_id,-l.amount,'Partida cancelada antes de iniciar','refund:'||l.reference,unixepoch() FROM coin_ledger l JOIN community_games cg ON cg.room_id=OLD.id AND cg.status='lobby' WHERE l.reference LIKE 'game:'||cg.id||':%' AND l.amount<0;
+    END;
+    ''')
     cols={r[1] for r in db.execute('PRAGMA table_info(orders)')}
     for name,definition in {'kind':"TEXT NOT NULL DEFAULT 'subscription'",'coins':'INTEGER NOT NULL DEFAULT 0','label':"TEXT NOT NULL DEFAULT ''"}.items():
         if name not in cols:db.execute(f'ALTER TABLE orders ADD COLUMN {name} {definition}')
@@ -60,7 +70,7 @@ def payment(db,order,status):
 
 
 def join_game(db,game_id,uid,cost,confirmation,error):
-    if cost and confirmation!=cost:raise error(f'Confirme a entrada por {cost} moedas.',409)
+    if cost and (type(confirmation)!=int or confirmation!=cost):raise error(f'Confirme a entrada por {cost} moedas.',409)
     if cost:entry(db,uid,-cost,'Entrada em jogo','game:'+game_id+':'+uid,error)
 
 
@@ -117,7 +127,8 @@ def register(app,db,auth,data,error):
     def admin_economy():
         if request.method=='PUT':
             n=integer(data().get('welcome'),0,100000,error)
-            db().execute('UPDATE coin_config SET welcome=? WHERE id=1',(n,));db().commit()
+            db().execute('UPDATE coin_config SET welcome=? WHERE id=1',(n,))
+            db().execute('INSERT INTO community_audit(admin_id,action,target,created_at) VALUES(?,?,?,?)',(uid(),'economy:welcome',str(n),time.time()));db().commit()
         return jsonify(welcome=db().execute('SELECT welcome FROM coin_config').fetchone()[0],packages=[dict(r) for r in db().execute('SELECT * FROM coin_packages ORDER BY price')],gifts=[dict(r) for r in db().execute('SELECT * FROM coin_gifts ORDER BY coins')],plugins=[dict(r) for r in db().execute('SELECT * FROM room_plugins ORDER BY name')])
 
     @app.put('/api/admin/economy/<kind>/<item>')
@@ -139,6 +150,9 @@ def register(app,db,auth,data,error):
             if typ not in ('game','widget'):raise error('Tipo de plugin inválido.')
             if engine!='embed':typ='game'
             url,_=external_url(d.get('url',''),error,optional=engine!='embed')
+            if url:
+                from urllib.parse import urlsplit
+                if urlsplit(url).hostname==request.host.split(':')[0]:raise error('Hospede o plugin em um domínio separado da plataforma.')
             cover,_=external_url(d.get('cover',''),error,optional=True)
             if typ=='widget' and coins:raise error('Widgets são gratuitos. Cobrança disponível para jogos.')
             db().execute('INSERT INTO room_plugins(id,name,description,kind,engine,url,cover,coins,active) VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,description=excluded.description,kind=excluded.kind,url=excluded.url,cover=excluded.cover,coins=excluded.coins,active=excluded.active,revision=revision+1',(item,name,str(d.get('description',''))[:500],typ,engine,url,cover,coins,active))

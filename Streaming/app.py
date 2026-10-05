@@ -135,6 +135,13 @@ def create_app(data_dir=None, testing=False):
         response.headers['X-Frame-Options'] = 'DENY'
         response.headers['Permissions-Policy'] = 'camera=(self), microphone=(self), geolocation=()'
         response.headers['Content-Security-Policy'] = "default-src 'self'; script-src 'self' https://www.youtube.com https://s.ytimg.com https://w.soundcloud.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https: http:; media-src 'self' blob: https: http:; connect-src 'self' https: http:; worker-src 'self' blob:; frame-src https://www.youtube.com https://www.youtube-nocookie.com https://w.soundcloud.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+        if response.mimetype=='text/html':
+            from urllib.parse import urlsplit
+            origins={'https://open.spotify.com','https://player.twitch.tv'}
+            for plugin in db().execute("SELECT url FROM room_plugins WHERE active=1 AND engine='embed'"):
+                u=urlsplit(plugin['url'])
+                if u.scheme=='https' and u.hostname and re.fullmatch(r'[A-Za-z0-9.-]+',u.hostname):origins.add('https://'+u.hostname)
+            response.headers['Content-Security-Policy']=response.headers['Content-Security-Policy'].replace('; frame-ancestors', ' '+' '.join(sorted(origins))+'; frame-ancestors')
         if request.path.startswith('/api/'):
             response.headers['Cache-Control'] = 'no-store'
         return response
@@ -455,7 +462,7 @@ def create_app(data_dir=None, testing=False):
     @app.get('/api/orders')
     @auth()
     def my_orders():
-        return jsonify(orders=[dict(r) for r in db().execute('SELECT o.id,o.amount,o.status,o.created_at,o.expires_at,p.name FROM orders o LEFT JOIN plans p ON p.id=o.plan_id WHERE user_id=? ORDER BY o.created_at DESC',(g.user['id'],))])
+        return jsonify(orders=[dict(r) for r in db().execute('SELECT o.id,o.amount,o.status,o.created_at,o.expires_at,o.kind,o.coins,COALESCE(NULLIF(o.label,\'\'),p.name) name FROM orders o LEFT JOIN plans p ON p.id=o.plan_id WHERE user_id=? ORDER BY o.created_at DESC',(g.user['id'],))])
 
     @app.get('/api/admin/overview')
     @auth(admin=True)

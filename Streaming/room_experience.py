@@ -3,6 +3,9 @@ import json
 import math
 import secrets
 import time
+import re
+import hashlib
+from urllib.parse import urlsplit, urlencode
 from flask import g, jsonify, request
 from werkzeug.security import generate_password_hash, check_password_hash
 import flix_wallet
@@ -10,7 +13,7 @@ import flix_wallet
 
 def migrate(db):
     cols={r[1] for r in db.execute('PRAGMA table_info(community_rooms)')}
-    for name,definition in {'privacy':"TEXT NOT NULL DEFAULT 'public'",'password_hash':"TEXT NOT NULL DEFAULT ''",'activity':"TEXT NOT NULL DEFAULT ''",'layout_revision':'INTEGER NOT NULL DEFAULT 1'}.items():
+    for name,definition in {'privacy':"TEXT NOT NULL DEFAULT 'public'",'password_hash':"TEXT NOT NULL DEFAULT ''",'activity':"TEXT NOT NULL DEFAULT ''",'layout_revision':'INTEGER NOT NULL DEFAULT 1','media_epoch':'INTEGER NOT NULL DEFAULT 1'}.items():
         if name not in cols:db.execute(f'ALTER TABLE community_rooms ADD COLUMN {name} {definition}')
     db.executescript('''
     CREATE TABLE IF NOT EXISTS room_password_attempts(room_id TEXT,user_id TEXT,at REAL);
@@ -25,6 +28,8 @@ def migrate(db):
     CREATE TABLE IF NOT EXISTS room_plugin_events(id INTEGER PRIMARY KEY AUTOINCREMENT,session_id TEXT NOT NULL REFERENCES room_plugin_sessions(id) ON DELETE CASCADE,user_id TEXT NOT NULL REFERENCES users(id),payload TEXT NOT NULL,created_at REAL NOT NULL);
     CREATE TABLE IF NOT EXISTS room_music_hearts(user_id TEXT REFERENCES users(id),track_id TEXT REFERENCES music_tracks(id),reactor TEXT REFERENCES users(id),PRIMARY KEY(user_id,track_id,reactor));
     ''')
+    if 'track_id' not in {r[1] for r in db.execute('PRAGMA table_info(room_audio_queue)')}:
+        db.execute('ALTER TABLE room_audio_queue ADD COLUMN track_id TEXT REFERENCES music_tracks(id)')
 
 
 def options(db,rid,d,error,creating=False):
@@ -43,7 +48,7 @@ def options(db,rid,d,error,creating=False):
     kind=modes[activity];changed=kind!=r['kind'] or activity!=r['activity']
     db.execute('UPDATE community_rooms SET privacy=?,password_hash=?,activity=?,kind=?,approval=CASE WHEN ?=\'private\' THEN 1 ELSE approval END,layout_revision=layout_revision+? WHERE id=?',(privacy,hashed,activity,kind,privacy,int(changed),rid))
     if changed and not creating:
-        db.execute("UPDATE community_rooms SET url='',media_type='',post_id=NULL,position=0,paused=1,music_current=NULL,revision=revision+1,updated_at=? WHERE id=?",(time.time(),rid))
+        db.execute("UPDATE community_rooms SET url='',media_type='',post_id=NULL,position=0,paused=1,music_current=NULL,media_epoch=media_epoch+1,revision=revision+1,updated_at=? WHERE id=?",(time.time(),rid))
         if kind=='live':db.execute("UPDATE community_members SET seat=NULL,camera=0,mic=0,stage_request='' WHERE room_id=? AND user_id!=?",(rid,r['host_id']))
         if kind not in ('live','video','watch'):db.execute('UPDATE community_members SET camera=0 WHERE room_id=?',(rid,))
         db.execute('DELETE FROM community_signals WHERE room_id=?',(rid,))
@@ -90,10 +95,42 @@ def register(app,db,auth,data,error,room,content_url):
         v=str(value or '').strip()
         if not 2<=len(v)<=maximum:raise error(f'Use entre 2 e {maximum} caracteres.')
         return v
+    def payload_json(value,limit):
+        try:
+            if not isinstance(value,dict):raise ValueError()
+            encoded=json.dumps(value,allow_nan=False)
+            if len(encoded)>limit:raise ValueError()
+            return encoded
+        except (ValueError,TypeError):raise error('Conteúdo do plugin inválido.')
 
     @app.get('/api/community/room-plugins')
     @auth()
-    def plugins():return jsonify(plugins=[dict(r) for r in db().execute('SELECT id,name,description,kind,engine,cover,coins,revision FROM room_plugins WHERE active=1 ORDER BY name')])
+    def plugins():return jsonify(plugins=[dict(r) for r in db().execute("SELECT id,name,description,kind,engine,cover,coins,revision FROM room_plugins WHERE active=1 AND engine!='provider' ORDER BY name")])
+
+    @app.post('/api/community/rooms/<rid>/provider')
+    @auth()
+    def provider(rid):
+        d=data();tx(rid,True);source=str(d.get('url',''));provider=d.get('provider')
+        try:
+            p=urlsplit(source)
+            if len(source)>2000 or p.scheme!='https' or p.username or p.password or p.port not in (None,443):raise ValueError()
+        except ValueError:raise error('Use um link HTTPS oficial.')
+        if provider=='spotify' and p.hostname=='open.spotify.com':
+            path=re.sub(r'^/intl-[a-z]+/','/',p.path)
+            if not re.fullmatch(r'/(track|album|playlist|episode|show|artist)/[A-Za-z0-9]{22}',path):raise error('Use o link completo de uma faixa, álbum ou playlist do Spotify.')
+            url='https://open.spotify.com/embed'+path;name='Spotify'
+        elif provider=='twitch' and p.hostname in ('twitch.tv','www.twitch.tv'):
+            channel=p.path.strip('/')
+            if not re.fullmatch(r'[a-zA-Z0-9_]{3,25}',channel):raise error('Use o link de um canal Twitch.')
+            url='https://player.twitch.tv/?'+urlencode({'channel':channel,'parent':request.host.split(':')[0],'autoplay':'false'});name='Twitch · '+channel
+        else:raise error('Use um link do provedor selecionado.')
+        if db().execute('SELECT 1 FROM room_plugin_sessions WHERE room_id=?',(rid,)).fetchone():raise error('Desative o widget atual antes de trocar.',409)
+        pid='provider_'+hashlib.sha256(url.encode()).hexdigest()[:24]
+        db().execute("INSERT OR IGNORE INTO room_plugins(id,name,description,kind,engine,url) VALUES(?,?,?,'widget','provider',?)",(pid,name,'Player oficial · controles do provedor',url))
+        active=db().execute('SELECT active FROM room_plugins WHERE id=?',(pid,)).fetchone()[0]
+        if not active:raise error('Este widget foi desativado pelo administrador.',403)
+        sid=secrets.token_urlsafe(16);db().execute('INSERT INTO room_plugin_sessions(room_id,id,plugin_id,coins,created_at) VALUES(?,?,?,0,?)',(rid,sid,pid,time.time()))
+        db().execute('INSERT INTO room_plugin_players VALUES(?,?,?)',(sid,uid(),time.time()));db().commit();return jsonify(ok=True)
 
     @app.get('/api/community/rooms/<rid>/experience')
     @auth()
@@ -103,18 +140,31 @@ def register(app,db,auth,data,error,room,content_url):
     @app.post('/api/community/rooms/<rid>/experience/queue')
     @auth()
     def enqueue(rid):
-        d=data();r=tx(rid);lane=d.get('lane','video');title=bounded(d.get('title'));url,typ=content_url(d.get('url'),error,media=True)
+        d=data();r=tx(rid);lane=d.get('lane','video');url,typ=content_url(d.get('url'),error,media=True)
+        title=bounded(d.get('title') or ('Vídeo do YouTube' if typ=='youtube' else 'Música da sala' if lane=='music' else 'Vídeo da sala'))
+        start=d.get('start_now') is True
+        if start and r['host_id']!=uid():raise error('Somente o anfitrião pode iniciar a reprodução.',403)
         table='room_audio_queue' if lane=='music' else 'community_queue'
         if lane not in ('music','video'):raise error('Fila inválida.')
         if lane=='music' and typ not in ('youtube','audio','soundcloud'):raise error('Use uma música do YouTube, SoundCloud ou um arquivo de áudio.')
         if db().execute('SELECT COUNT(*) FROM '+table+' WHERE room_id=?',(rid,)).fetchone()[0]>=100:raise error('A fila atingiu 100 itens.')
         if lane=='music':
-            db().execute('INSERT INTO room_audio_queue(room_id,user_id,title,url,media_type,created_at) VALUES(?,?,?,?,?,?)',(rid,uid(),title,url,typ,time.time()))
+            tid='room_'+hashlib.sha256(url.encode()).hexdigest()[:24]
+            provider='youtube' if typ=='youtube' else 'soundcloud' if typ=='soundcloud' else 'upload' if url.startswith('/api/community/assets/') else 'link'
+            db().execute('INSERT OR IGNORE INTO music_tracks(id,provider,title,artist,url,created_at,updated_at) VALUES(?,?,?,?,?,?,?)',(tid,provider,title,'Comunidade Flix',url,time.time(),time.time()))
+            tid=db().execute('SELECT id FROM music_tracks WHERE url=?',(url,)).fetchone()[0]
+            item=db().execute('INSERT INTO room_audio_queue(room_id,user_id,title,url,media_type,created_at,track_id) VALUES(?,?,?,?,?,?,?)',(rid,uid(),title,url,typ,time.time(),tid)).lastrowid
+            if start:
+                now=time.time();db().execute('INSERT OR IGNORE INTO room_audio(room_id,updated_at) VALUES(?,?)',(rid,now))
+                db().execute('UPDATE room_audio SET current_id=?,position=0,paused=0,revision=revision+1,updated_at=? WHERE room_id=?',(item,now,rid))
         else:
             if r['kind']=='music' and r['music_current']:raise error('Use a fila de músicas desta sala.',409)
-            db().execute('INSERT INTO community_queue(room_id,title,url,media_type,created_at,added_by) VALUES(?,?,?,?,?,?)',(rid,title,url,typ,time.time(),uid()))
+            item=db().execute('INSERT INTO community_queue(room_id,title,url,media_type,created_at,added_by) VALUES(?,?,?,?,?,?)',(rid,title,url,typ,time.time(),uid())).lastrowid
+            if start:
+                db().execute('UPDATE community_rooms SET url=?,media_type=?,post_id=NULL,music_current=NULL,position=0,paused=0,media_epoch=media_epoch+1,revision=revision+1,updated_at=? WHERE id=?',(url,typ,time.time(),rid))
+                db().execute('DELETE FROM community_queue WHERE id=?',(item,))
         import community_social
-        community_social.retain_assets(db(),url);db().commit();return jsonify(ok=True),201
+        community_social.retain_assets(db(),url);db().commit();return jsonify(ok=True,id=item,started=start,lane=lane),201
 
     @app.patch('/api/community/rooms/<rid>/soundtrack')
     @auth()
@@ -127,7 +177,9 @@ def register(app,db,auth,data,error,room,content_url):
             q=db().execute('SELECT id FROM room_audio_queue WHERE room_id=? AND id=?',(rid,d.get('id'))).fetchone()
             if not q:raise error('Música não encontrada.',404)
             current=q[0];position=0;paused=0
-        elif action=='next':
+        elif action in ('next','ended'):
+            if action=='ended' and (type(d.get('current_id')) is not int or d['current_id']!=current):
+                db().commit();return jsonify(ok=True,advanced=False)
             q=db().execute('SELECT id FROM room_audio_queue WHERE room_id=? AND id>? ORDER BY id LIMIT 1',(rid,current or 0)).fetchone();current=q[0] if q else None;position=0;paused=0 if q else 1
         elif action=='stop':current=None;position=0;paused=1
         elif action=='pause':paused=1
@@ -186,8 +238,7 @@ def register(app,db,auth,data,error,room,content_url):
         else:
             ps=db().execute('SELECT * FROM room_plugin_sessions WHERE room_id=?',(rid,)).fetchone()
             if not ps or d.get('session_id')!=ps['id'] or d.get('revision')!=ps['revision']:raise error('O plugin foi atualizado.',409)
-            state=d.get('state',{});value=json.dumps(state,allow_nan=False)
-            if not isinstance(state,dict) or len(value)>32000:raise error('Estado de plugin inválido.')
+            state=d.get('state',{});value=payload_json(state,32000)
             db().execute('UPDATE room_plugin_sessions SET state=?,revision=revision+1 WHERE room_id=?',(value,rid))
         db().commit();return jsonify(ok=True)
 
@@ -204,8 +255,7 @@ def register(app,db,auth,data,error,room,content_url):
     def plugin_event(rid):
         d=data();tx(rid);s=db().execute('SELECT s.id FROM room_plugin_sessions s JOIN room_plugin_players p ON p.session_id=s.id AND p.user_id=? JOIN room_plugins rp ON rp.id=s.plugin_id AND rp.active=1 WHERE s.room_id=?',(uid(),rid)).fetchone()
         if not s or d.get('session_id')!=s['id']:raise error('Entre no plugin para participar.',403)
-        payload=d.get('payload');value=json.dumps(payload,allow_nan=False)
-        if not isinstance(payload,dict) or len(value)>4000:raise error('Evento inválido.')
+        payload=d.get('payload');value=payload_json(payload,4000)
         if db().execute('SELECT COUNT(*) FROM room_plugin_events WHERE user_id=? AND created_at>?',(uid(),time.time()-1)).fetchone()[0]>=15:raise error('Aguarde um instante.',429)
         db().execute('INSERT INTO room_plugin_events(session_id,user_id,payload,created_at) VALUES(?,?,?,?)',(s['id'],uid(),value,time.time()));db().execute('DELETE FROM room_plugin_events WHERE session_id=? AND id NOT IN (SELECT id FROM room_plugin_events WHERE session_id=? ORDER BY id DESC LIMIT 200)',(s['id'],s['id']));db().commit();return jsonify(ok=True)
 

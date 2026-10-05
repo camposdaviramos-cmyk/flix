@@ -22,6 +22,8 @@ def repair(db,rid,now=None):
     position=r['position']+(max(0,end-r['updated_at']) if not r['paused'] else 0)
     db.execute("UPDATE community_members SET seat=NULL,mic=0,camera=0,stage_request='' WHERE room_id=? AND user_id=?",(rid,r['host_id']))
     if not next_host:
+        from flix_wallet import refund_game
+        for game in db.execute("SELECT id FROM community_games WHERE room_id=? AND status='lobby'",(rid,)):refund_game(db,game['id'])
         db.execute("UPDATE community_rooms SET status='closed',paused=1,position=?,revision=revision+1,updated_at=? WHERE id=?",(position,now,rid))
         db.execute("UPDATE community_games SET status='cancelled',revision=revision+1 WHERE room_id=? AND status IN ('lobby','playing')",(rid,))
         db.execute("UPDATE community_members SET mic=0,camera=0,seat=NULL,stage_request='' WHERE room_id=?",(rid,))

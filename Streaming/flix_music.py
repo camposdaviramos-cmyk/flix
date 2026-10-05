@@ -62,6 +62,19 @@ def track_for_post(db,p):
     if p.get('music_id'):return public_track(db.execute('SELECT * FROM music_tracks WHERE id=?',(p['music_id'],)).fetchone())
     return public_track(db.execute('SELECT * FROM music_tracks WHERE url=?',(p.get('url',''),)).fetchone()) if p.get('kind')=='music' else None
 
+def advance_finished(db,r,now):
+    rows=db.execute('SELECT * FROM community_queue WHERE room_id=? AND track_id IS NOT NULL ORDER BY position,id',(r['id'],)).fetchall()
+    current=r['music_current'];index=next((i for i,q in enumerate(rows) if q['id']==current),-1)
+    if index<0:return False
+    if r['music_repeat']=='one':target=index
+    elif r['music_shuffle'] and len(rows)>1:target=secrets.choice([i for i in range(len(rows)) if i!=index])
+    else:target=index+1
+    playing=target<len(rows) or r['music_repeat']=='all'
+    q=rows[target%len(rows)] if playing else rows[index]
+    db.execute('UPDATE community_rooms SET music_current=?,url=?,media_type=?,position=0,paused=?,media_epoch=media_epoch+1,revision=revision+1,updated_at=? WHERE id=?',(q['id'],q['url'],q['media_type'],int(not playing),now,r['id']))
+    return playing
+
+
 def room_snapshot(db,rid):
     row=db.execute('SELECT * FROM community_rooms WHERE id=?',(rid,)).fetchone();r=dict(row);r.pop('password_hash',None)
     r['queue']=[{**dict(q),'track':public_track(db.execute('SELECT * FROM music_tracks WHERE id=?',(q['track_id'],)).fetchone())} for q in db.execute("SELECT q.*,COALESCE(u.name,'Anfitrião') added_name FROM community_queue q LEFT JOIN users u ON u.id=q.added_by WHERE q.room_id=? AND q.track_id IS NOT NULL ORDER BY q.position,q.id",(rid,))]
@@ -300,20 +313,21 @@ def register(app,db,auth,data,error,setting,save_setting):
                 order=d.get('order',[])
                 if not isinstance(order,list) or any(type(i) is not int for i in order) or len(order)!=len(rows) or len(set(order))!=len(order) or set(order)!={q['id'] for q in rows}:raise error('Ordem inválida.')
                 db().executemany('UPDATE community_queue SET position=? WHERE room_id=? AND id=?',[(i,rid,q) for i,q in enumerate(order)])
-            elif action in ('next','previous','select','ended'):
+            elif action=='ended':
+                if d.get('media_epoch',r['media_epoch'])!=r['media_epoch']:raise error('A reprodução já avançou.',409)
+                advance_finished(db(),r,now);value=room_snapshot(db(),rid);db().commit();return jsonify(room=value)
+            elif action in ('next','previous','select'):
                 if not rows:raise error('Adicione uma faixa à fila.')
                 index=next((i for i,q in enumerate(rows) if q['id']==current),0)
                 if action=='select':
                     if not any(q['id']==d.get('id') for q in rows):raise error('Faixa indisponível.')
                     current=d['id']
-                elif action=='ended' and r['music_repeat']=='one':pass
                 elif r['music_shuffle'] and len(rows)>1:current=secrets.choice([q['id'] for q in rows if q['id']!=current])
                 else:
                     target=index+(-1 if action=='previous' else 1)
-                    if action=='ended' and target>=len(rows) and r['music_repeat']=='off':paused=1;target=index
                     current=rows[target%len(rows)]['id']
                 pos=0
-                if action!='ended':paused=0
+                paused=0
             elif action in ('play','pause','seek'):
                 if not current:raise error('Adicione uma faixa à fila.')
                 if action in ('play','pause'):paused=int(action=='pause')
@@ -327,7 +341,7 @@ def register(app,db,auth,data,error,setting,save_setting):
             elif action=='clear':db().execute('DELETE FROM community_queue WHERE room_id=?',(rid,));current=None;pos=0;paused=1
             else:raise error('Ação inválida.')
             q=db().execute('SELECT url,media_type FROM community_queue WHERE room_id=? AND id=?',(rid,current)).fetchone()
-            db().execute('UPDATE community_rooms SET music_current=?,position=?,paused=?,updated_at=?,revision=revision+1,url=?,media_type=? WHERE id=?',(current,pos,paused,now,q['url'] if q else '',q['media_type'] if q else '',rid))
+            db().execute('UPDATE community_rooms SET music_current=?,position=?,paused=?,updated_at=?,revision=revision+1,media_epoch=media_epoch+?,url=?,media_type=? WHERE id=?',(current,pos,paused,now,int(current!=r['music_current'] or action in ('next','previous','select','clear')),q['url'] if q else '',q['media_type'] if q else '',rid))
         value=room_snapshot(db(),rid);value['requests']=[dict(u) for u in db().execute("SELECT u.id,u.name,u.username,COALESCE(p.avatar,'') avatar FROM community_members m JOIN users u ON u.id=m.user_id LEFT JOIN community_profiles p ON p.user_id=u.id WHERE m.room_id=? AND m.status='pending' AND m.seen_at>?",(rid,now-120))] if value['host_id']==uid() else []
         after=max(0,int(request.args.get('after',0)));value['messages']=[dict(m) for m in db().execute('SELECT m.id,m.user_id,m.body,m.created_at,u.name,u.username,u.verified FROM community_messages m JOIN users u ON u.id=m.user_id WHERE m.room_id=? AND m.id>? ORDER BY m.id DESC LIMIT 60',(rid,after))][::-1];db().commit();return jsonify(room=value)
 

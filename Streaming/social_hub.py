@@ -1,3 +1,4 @@
+import reel_studio
 """Private messaging, activity, calls and transactional notification inbox."""
 import base64
 import datetime
@@ -105,6 +106,12 @@ def profile_activity(db,user,viewer):
     return value
 
 def share_preview(db,kind,target):
+    if kind=='story':
+        import story_studio
+        user=g.user['id'] if g.get('user') else ''
+        r=db.execute("SELECT s.*,u.name FROM community_stories s JOIN users u ON u.id=s.user_id WHERE s.id=? AND s.status='published' AND s.expires_at>? AND u.status='active'",(target,time.time())).fetchone()
+        if not r or not story_studio.visible(db,target,user):return None
+        return {'kind':'story','id':target,'title':'Story de '+r['name'],'image':r['thumbnail'],'href':'/comunidade?story='+target}
     if kind in ('room','game'):
         r=db.execute("SELECT id,title,cover,kind FROM community_rooms WHERE id=? AND status='open'",(target,)).fetchone()
         return {'kind':kind,'id':target,'title':r['title'],'image':r['cover'],'href':'/comunidade/sala/'+target} if r else None
@@ -113,6 +120,7 @@ def share_preview(db,kind,target):
         r=db.execute(('SELECT id,title,image FROM music_tracks WHERE id=?' if kind=='music' else 'SELECT id,name title,cover image FROM music_playlists WHERE id=? AND public=1'),(target,)).fetchone()
         return {**dict(r),'kind':kind,'href':'/comunidade?tab=music&'+('track' if kind=='music' else 'playlist')+'='+target} if r else None
     if kind in ('post','reel'):
+        if not reel_studio.visible(db,target,g.user['id'] if g.get('user') else ''):return None
         r=db.execute("SELECT p.id,p.title,p.poster FROM community_posts p JOIN users u ON u.id=p.user_id WHERE p.id=? AND p.status='published' AND u.status='active' AND (p.space_id IS NULL OR EXISTS(SELECT 1 FROM social_spaces ss WHERE ss.id=p.space_id AND ss.status='active' AND ss.privacy='public'))",(target,)).fetchone()
         return {'kind':kind,'id':target,'title':r['title'],'image':r['poster'],'href':'/comunidade/post/'+target} if r else None
     return None
@@ -215,6 +223,10 @@ def register(app,db,auth,data,error):
                     if not isinstance(share,dict):raise error('Compartilhamento inválido.')
                     kind,target=share.get('kind'),str(share.get('id',''))
                     if not share_preview(db(),kind,target):raise error('Conteúdo indisponível.',404)
+                    if kind in ('post','reel') and not reel_studio.visible(db(),target,other):raise error('Este Reel não está disponível para esse amigo.',403)
+                    if kind=='story':
+                        import story_studio
+                        if not story_studio.visible(db(),target,other):raise error('Este story não está disponível para esse amigo.',403)
                 body=body or ('🎙️ Mensagem de áudio' if aid else 'Compartilhou '+share_preview(db(),kind,target)['title'])
                 mid=db().execute('INSERT INTO community_dm(sender,recipient,body,created_at) VALUES(?,?,?,?)',(uid(),other,body,time.time())).lastrowid
                 db().execute('INSERT INTO hub_dm_meta VALUES(?,?,?,?,?)',(mid,aid,kind,target,key))

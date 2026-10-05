@@ -1,5 +1,5 @@
 'use strict';
-const CACHE='flix-shell-v3',OFFLINE='/static/offline.html';
+const CACHE='flix-shell-v8',OFFLINE='/static/offline.html';
 self.addEventListener('install',e=>{e.waitUntil(caches.open(CACHE).then(c=>c.addAll([OFFLINE,'/static/assets/flix-icon-192.png','/static/assets/flix-icon-512.png'])).then(()=>self.skipWaiting()));});
 self.addEventListener('activate',e=>{e.waitUntil(Promise.all([caches.keys().then(keys=>Promise.all(keys.filter(k=>k.startsWith('flix-shell-')&&k!==CACHE).map(k=>caches.delete(k)))),self.clients.claim()]));});
 self.addEventListener('fetch',e=>{const u=new URL(e.request.url);if(e.request.method!=='GET'||u.origin!==self.location.origin||u.pathname.startsWith('/api/'))return;if([OFFLINE,'/static/assets/flix-icon-192.png','/static/assets/flix-icon-512.png'].includes(u.pathname)){e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request)));return;}if(e.request.mode==='navigate')e.respondWith(fetch(e.request).catch(()=>caches.match(OFFLINE)));});

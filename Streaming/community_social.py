@@ -1,5 +1,7 @@
+import reel_studio
 """Social media, ephemeral stories, reactions and live presence."""
 import json
+import story_studio
 import re
 import secrets
 import struct
@@ -45,14 +47,16 @@ def private_asset(db,url):
     args=(url,)*4
     viewer=g.user['id'] if g.get('user') else ''
     restricted="(p.status IN ('private','archived','hidden','removed') OR ss.status='hidden' OR (ss.privacy='private' AND NOT EXISTS(SELECT 1 FROM social_space_members sm WHERE sm.space_id=ss.id AND sm.user_id=?)))"
-    if not db.execute('SELECT 1 '+joins+' WHERE '+restricted+' AND '+refs,(viewer,*args)).fetchone():return False
-    if db.execute("SELECT 1 "+joins+" WHERE p.status='published' AND (p.space_id IS NULL OR (ss.status='active' AND (ss.privacy='public' OR EXISTS(SELECT 1 FROM social_space_members sm WHERE sm.space_id=ss.id AND sm.user_id=?)))) AND "+refs,(viewer,*args)).fetchone():return False
+    private_post=db.execute('SELECT 1 '+joins+' WHERE ('+restricted+' OR NOT '+reel_studio.visibility()+') AND '+refs,(viewer,viewer,viewer,viewer,*args)).fetchone()
+    private_story=db.execute("SELECT 1 FROM community_stories s LEFT JOIN community_compositions c ON c.target_type='story' AND c.target_id=s.id WHERE (s.media_url=? OR s.thumbnail=? OR instr(c.payload,?)>0) AND (s.status!='published' OR s.expires_at<=? OR NOT "+story_studio.visibility()+")",(url,url,url,time.time(),viewer,viewer,viewer)).fetchone()
+    if not private_post and not private_story:return False
+    if db.execute("SELECT 1 "+joins+" WHERE p.status='published' AND (p.space_id IS NULL OR (ss.status='active' AND (ss.privacy='public' OR EXISTS(SELECT 1 FROM social_space_members sm WHERE sm.space_id=ss.id AND sm.user_id=?)))) AND "+reel_studio.visibility()+" AND "+refs,(viewer,viewer,viewer,viewer,*args)).fetchone():return False
     if db.execute('SELECT 1 FROM music_tracks WHERE url=? OR image=?',(url,url)).fetchone():return False
     if db.execute("SELECT 1 FROM music_playlists WHERE cover=? AND (public=1 OR user_id=?)",(url,viewer)).fetchone():return False
     if db.execute("SELECT 1 FROM social_spaces WHERE status='active' AND (avatar=? OR cover=?)",(url,url)).fetchone():return False
     if db.execute('SELECT 1 FROM hub_groups gr JOIN hub_group_members m ON m.group_id=gr.id WHERE gr.avatar=? AND m.user_id=?',(url,viewer)).fetchone():return False
     if db.execute('SELECT 1 FROM community_profiles WHERE avatar=? OR cover=?',(url,url)).fetchone():return False
-    if db.execute("SELECT 1 FROM community_stories s LEFT JOIN community_compositions c ON c.target_type='story' AND c.target_id=s.id WHERE s.status='published' AND s.expires_at>? AND (s.media_url=? OR s.thumbnail=? OR instr(c.payload,?)>0)",(time.time(),url,url,url)).fetchone():return False
+    if db.execute("SELECT 1 FROM community_stories s LEFT JOIN community_compositions c ON c.target_type='story' AND c.target_id=s.id WHERE s.status='published' AND s.expires_at>? AND (s.media_url=? OR s.thumbnail=? OR instr(c.payload,?)>0) AND "+story_studio.visibility(),(time.time(),url,url,url,viewer,viewer,viewer)).fetchone():return False
     if db.execute("SELECT 1 FROM community_rooms WHERE status='open' AND (url=? OR cover=?)",(url,url)).fetchone():return False
     return True
 
@@ -94,7 +98,7 @@ def register(app,db,auth,data,error,external_url,room,post):
         return local_asset(value,db(),error,uid() if owner else None) or external_url(value,error,optional=True)
     def story(sid):
         r=db().execute("SELECT s.*,u.name,u.username,u.verified,COALESCE(p.avatar,'') avatar FROM community_stories s JOIN users u ON u.id=s.user_id LEFT JOIN community_profiles p ON p.user_id=u.id WHERE s.id=? AND s.status='published' AND s.expires_at>? AND u.status='active'",(sid,time.time())).fetchone()
-        if not r:raise error('Este story expirou ou foi removido.',404)
+        if not r or (g.user['role']!='admin' and not story_studio.visible(db(),sid,uid())):raise error('Este story expirou ou não está disponível para você.',404)
         return r
 
     def cleanup_expired():
@@ -130,6 +134,11 @@ def register(app,db,auth,data,error,external_url,room,post):
         if len(content)>=32 and content.startswith(b'\x89PNG\r\n\x1a\n') and content[12:16]==b'IHDR':
             w,h=struct.unpack('>II',content[16:24]);mime='image/png'
             if min(w,h)<1 or max(w,h)>4096 or len(content)>4*1024*1024 or content[-8:]!=b'IEND\xaeB`\x82':raise error('Imagem inválida. Use até 4096 px e 4 MB.')
+        elif content[:6] in (b'GIF87a',b'GIF89a'):
+            if len(content)<14 or len(content)>4*1024*1024 or content[-1:]!=b';':raise error('GIF inválido. Use até 4 MB.')
+            w,h=struct.unpack('<HH',content[6:10])
+            if min(w,h)<1 or max(w,h)>2048:raise error('Use um GIF de até 2048 pixels.')
+            mime='image/gif'
         elif len(content)>16 and content[4:8]==b'ftyp':mime='audio/mp4' if (content[8:12] in (b'M4A ',b'M4B ') or f.mimetype in ('audio/mp4','audio/x-m4a')) else 'video/mp4'
         elif len(content)>44 and content.startswith(b'RIFF') and content[8:12]==b'WAVE':mime='audio/wav'
         elif len(content)>32 and content.startswith(b'OggS') and (b'OpusHead' in content[:256] or b'vorbis' in content[:256]):mime='audio/ogg'
@@ -169,11 +178,12 @@ def register(app,db,auth,data,error,external_url,room,post):
               EXISTS(SELECT 1 FROM community_story_views v WHERE v.story_id=s.id AND v.user_id=?) viewed,
               (SELECT COUNT(*) FROM community_story_views v WHERE v.story_id=s.id) views
               FROM community_stories s JOIN users u ON u.id=s.user_id LEFT JOIN community_profiles p ON p.user_id=u.id
-              WHERE s.status='published' AND s.expires_at>? AND u.status='active' ORDER BY s.created_at DESC LIMIT 100""",(uid(),time.time())).fetchall()
+              WHERE s.status='published' AND s.expires_at>? AND u.status='active' AND """+story_studio.visibility()+" ORDER BY s.created_at DESC LIMIT 100",(uid(),time.time(),uid(),uid(),uid())).fetchall()
             return jsonify(stories=[dict(r) for r in rows])
         d=data();body=str(d.get('body','')).strip();background=d.get('background','#6246a8')
         import community_experience
         comp=community_experience.composition(db(),d['composition'],error,external_url,uid()) if d.get('composition') is not None else None
+        comp,audience,people=story_studio.validate(db(),d,comp,error,external_url,uid())
         if len(body)>700 or not re.fullmatch(r'#[0-9a-fA-F]{6}',str(background)):raise error('Texto ou cor inválida.')
         url,kind=asset(d.get('media_url',''))
         if not body and not url and not comp:raise error('Adicione texto, foto ou vídeo.')
@@ -185,6 +195,7 @@ def register(app,db,auth,data,error,external_url,room,post):
         if thumbnail and thumb_kind!='image':raise error('A capa deve ser uma imagem.')
         db().execute('INSERT INTO community_stories(id,user_id,body,media_url,media_type,background,created_at,expires_at,status,thumbnail) VALUES(?,?,?,?,?,?,?,?,?,?)',(sid,uid(),body,url,kind,background,now,now+86400,'published',thumbnail))
         if thumbnail.startswith('/api/community/assets/') and not permanent_asset(db(),thumbnail):db().execute('UPDATE community_assets SET expires_at=? WHERE id=?',(now+86400,thumbnail.rsplit('/',1)[-1]))
+        story_studio.save_audience(db(),sid,audience,people,uid())
         if comp is not None:community_experience.save_composition(db(),'story',sid,comp,now+86400)
         if url.startswith('/api/community/assets/') and not permanent_asset(db(),url):
             db().execute('UPDATE community_assets SET expires_at=? WHERE id=?',(now+86400,url.rsplit('/',1)[-1]))
@@ -200,6 +211,8 @@ def register(app,db,auth,data,error,external_url,room,post):
         detail=dict(s);row=db().execute("SELECT payload FROM community_compositions WHERE target_type='story' AND target_id=?",(sid,)).fetchone();detail['composition']=json.loads(row[0]) if row else None
         detail['views']=db().execute('SELECT COUNT(*) FROM community_story_views WHERE story_id=?',(sid,)).fetchone()[0]
         return jsonify(story=detail,reactions=reaction_state(db(),'story',sid,uid()))
+
+    story_studio.register(app,db,auth,data,error,story)
 
     @app.post('/api/community/stories/<sid>/view')
     @auth()

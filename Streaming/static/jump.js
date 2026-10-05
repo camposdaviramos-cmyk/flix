@@ -15,6 +15,7 @@ window.FlixJump = (() => {
   function panel(p, title, html) {
     const el=$('.fj-panel',p.wrap);el.hidden=false;
     el.innerHTML=`<div class="fj-panel-head"><div><span class="fj-kicker">FLIXJUMP</span><h3>${title}</h3></div>${button('panel-close','Fechar painel','close')}</div>${html}`;
+    window.FlixJumpMobile?.panel(p);
     $('.fj-bubbles',p.wrap).hidden=true;
     $('[data-jump="chat"]',p.wrap)?.setAttribute('aria-expanded','true');
   }
@@ -69,7 +70,7 @@ window.FlixJump = (() => {
     const fresh=room.messages.filter(m=>m.id>p.lastMessage);
     if(fresh.length){p.lastMessage=room.messages.at(-1).id;if(log){log.innerHTML=room.messages.map(messageHTML).join('');log.scrollTop=log.scrollHeight;}for(const m of fresh.filter(m=>room.server_time-m.created_at<10).slice(-3))bubble(p,m);}
     if(!host(p)||becameHost)syncVideo(p,becameHost);
-    scheduleVoice(p);
+    scheduleVoice(p);window.FlixJumpMobile?.update(p,chat);
   }
   function messageHTML(m){return `<div class="fj-message ${m.user_id===state.user.id?'own':''}"><strong>${esc(m.name)}</strong><p>${esc(m.body)}</p><time>${new Date(m.created_at*1000).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}</time></div>`;}
   function bubble(p,m){const root=$('.fj-bubbles',p.wrap);const node=document.createElement('button');node.type='button';node.className='fj-bubble';node.dataset.jump='chat';node.innerHTML=`<strong>${esc(m.name)}</strong><span>${esc(m.body)}</span>`;root.append(node);while(root.children.length>3)root.firstChild.remove();setTimeout(()=>node.remove(),8000);}
@@ -166,7 +167,7 @@ window.FlixJump = (() => {
     if(!p.jump){panel(p,'A melhor sessão é juntos.',`<div class="fj-panel-body"><p>Convide seus amigos para assistir a filmes, séries e TV em sincronia.</p><button class="btn btn-primary full-width" data-jump="create">${icon('users')} Criar uma sala</button><div class="divider-label">JÁ TEM UM CONVITE?</div><form data-jump-form="join"><label class="field">Link ou código da sala<input name="code" required maxlength="2048" autocomplete="off" placeholder="Cole o link ou código aqui"></label><button class="btn btn-secondary full-width" type="submit">Entrar na sala ${icon('arrow')}</button><p class="form-error" role="alert"></p></form><button class="fj-text" data-jump="friends">${icon('plus')} Meus amigos</button></div>`);return;}
     panel(p,'Sua sala de cinema',`<div class="fj-panel-body"><div class="fj-code"><span>Código da sala<strong>${esc(p.jump.id)}</strong></span>${button('copy','Copiar código da sala','link')}</div><label class="field fj-share-link">Link de convite<input readonly aria-label="Link de convite da sala" value="${esc(roomLink(p.jump.id))}"></label><div class="fj-room-actions"><button class="btn btn-secondary btn-small" data-jump="copy-link">${icon('link')} Copiar link</button><button class="fj-text" data-jump="share-room">Compartilhar</button></div><p><strong>${p.jump.permanent?'Sala permanente':'Sala temporária'}</strong> · ${p.jump.permanent?'O anfitrião permanece o mesmo quando sai.':'O próximo participante assume ao anfitrião sair. Vazia, a sala encerra.'}</p>${host(p)?`<button class="btn btn-secondary btn-small" data-jump="permanent">${p.jump.permanent?'Tornar temporária':'Tornar permanente'}</button>`:''}<p>Quem recebe o convite aguarda a aprovação do anfitrião. Até 8 pessoas, com plano ativo.</p><div class="fj-requests"></div><div class="fj-members"></div><div class="fj-room-actions"><button class="btn btn-secondary btn-small" data-jump="friends">${icon('plus')} Convidar amigos</button><button class="fj-text" data-jump="chat">${icon('chat')} Conversar</button></div><button class="fj-text" data-jump="leave">Sair da sala</button><button class="fj-text fj-danger" data-jump="end" ${host(p)?'':'hidden'}>Encerrar para todos</button></div>`);setRoom(p,p.jump);
   }
-  function chat(p){if(!p.jump){roomPanel(p);return;}panel(p,'Conversa da sala',`<div class="fj-chat-log" role="log" aria-live="polite">${p.jump.messages.map(messageHTML).join('')}</div><form data-jump-form="chat" class="fj-chat-form"><label class="sr-only" for="fj-message">Mensagem</label><input id="fj-message" name="body" placeholder="Comente essa cena…" required maxlength="1000" autocomplete="off"><button type="submit" class="fj-icon" aria-label="Enviar mensagem">${icon('send')}</button><p class="form-error" role="alert"></p></form>`);const log=$('.fj-chat-log',p.wrap);log.scrollTop=log.scrollHeight;$('#fj-message',p.wrap).focus();}
+  function chat(p,focus=true){if(!p.jump){roomPanel(p);return;}panel(p,'Conversa da sala',`<div class="fj-chat-log" role="log" aria-live="polite">${p.jump.messages.map(messageHTML).join('')}</div><form data-jump-form="chat" class="fj-chat-form"><label class="sr-only" for="fj-message">Mensagem</label><input id="fj-message" name="body" placeholder="Comente essa cena…" required maxlength="1000" autocomplete="off"><button type="submit" class="fj-icon" aria-label="Enviar mensagem">${icon('send')}</button><p class="form-error" role="alert"></p></form>`);const log=$('.fj-chat-log',p.wrap);log.scrollTop=log.scrollHeight;if(focus&&!p.rmMobile)$('#fj-message',p.wrap).focus();}
   async function friends(p=active){
     const social=await api('/social');
     if(p&&p.disposed)return;
@@ -223,7 +224,7 @@ window.FlixJump = (() => {
       if(r.room){
         admission=null;lobbyStatus('Entrada autorizada. Boa sessão!','A sala está aberta no player.');
         await play(r.room.content_id,r.room.episode_id,r.room);
-        if(active?.jump?.id===q.rid)roomPanel(active);
+        if(active?.jump?.id===q.rid){if(active.rmMobile)chat(active,false);else roomPanel(active);}
         else {await post(`/jump/rooms/${q.rid}/leave`);lobbyStatus('Não foi possível abrir o vídeo','Atualize a página para tentar entrar novamente.');}
         return;
       }
@@ -238,7 +239,7 @@ window.FlixJump = (() => {
   }
   async function join(value){
     const rid=entryId(value);
-    if(active?.jump?.id===rid){roomPanel(active);return;}
+    if(active?.jump?.id===rid){if(active.rmMobile)chat(active,false);else roomPanel(active);return;}
     await navigate(roomPath(rid));
   }
   function requestsHTML(requests){
@@ -309,11 +310,13 @@ window.FlixJump = (() => {
   }
   function clearVoice(p){stopCamera(p);stopMic(p);closeVoicePriority(p);p.peers.forEach(({pc,audio})=>{pc.close();audio.remove();});p.peers.clear();}
   function dispose(p,notify=true){
+    window.FlixJumpMobile?.dispose(p);
     p.disposed=true;window.removeEventListener('online',p.recoverPlayback);document.removeEventListener('visibilitychange',p.visibilityPlayback);clearTimeout(p.pollTimer);clearTimeout(p.publishTimer);clearTimeout(p.hideControls);clearInterval(p.hostTimer);clearVoice(p);
     if(notify&&p.jump)api(`/jump/rooms/${p.jump.id}/leave`,{method:'POST',body:{},keepalive:true}).catch(()=>{});
     if(active===p)active=null;
   }
   function leave(p,notify=true){
+    window.FlixJumpMobile?.dispose(p);
     const room=p.jump;clearTimeout(p.pollTimer);clearTimeout(p.publishTimer);clearInterval(p.hostTimer);p.jump=null;p.video.playbackRate=1;playbackGate(p,false);clearVoice(p);p.cursor=0;p.signalQueue=[];p.lastMessage=0;p.voiceReady=false;
     if(notify&&room)api(`/jump/rooms/${room.id}/leave`,{method:'POST',body:{},keepalive:true}).catch(()=>{});
     $('.fj-room-label',p.wrap).textContent='Seu cinema, sua companhia.';$('.fj-room-badge',p.wrap).hidden=true;$('.fj-sync',p.wrap).textContent='Assistindo por conta própria';$('.fj-timeline',p.wrap).disabled=false;
@@ -385,9 +388,9 @@ window.FlixJump = (() => {
         case 'share-room':{const url=roomLink(p.jump.id);if(navigator.share){try{await navigator.share({title:'Assista comigo no FlixJump',text:'Abra o convite para solicitar entrada na minha sala.',url});}catch(e){if(e.name!=='AbortError')throw e;}}else{try{await navigator.clipboard.writeText(url);status(p,'Link copiado para compartilhar.');}catch(_){status(p,'Selecione e copie o link no campo de convite.');}}break;}
 
         case 'permanent':{const r=await api('/jump/rooms/'+p.jump.id+'/settings',{method:'PATCH',body:{permanent:!p.jump.permanent}});setRoom(p,r.room);await roomPanel(p);break;}
-        case 'create':{if(p.jump){await roomPanel(p);break;}const r=await post('/jump/rooms',{content_id:p.id,episode_id:p.episode,position:p.video.currentTime,paused:p.video.paused});if(p.disposed){await post(`/jump/rooms/${r.room.id}/leave`);break;}await attach(p,r.room);await roomPanel(p);break;}
+        case 'create':{if(p.jump){await roomPanel(p);break;}const r=await post('/jump/rooms',{content_id:p.id,episode_id:p.episode,position:p.video.currentTime,paused:p.video.paused});if(p.disposed){await post(`/jump/rooms/${r.room.id}/leave`);break;}await attach(p,r.room);if(p.rmMobile)chat(p,false);else await roomPanel(p);break;}
         case 'chat':chat(p);break;
-        case 'panel-close':$('.fj-panel',p.wrap).hidden=true;$('.fj-bubbles',p.wrap).hidden=false;$('[data-jump="chat"]',p.wrap).setAttribute('aria-expanded','false');break;
+        case 'panel-close':if(p.rmMobile){chat(p,false);break;}$('.fj-panel',p.wrap).hidden=true;$('.fj-bubbles',p.wrap).hidden=false;$('[data-jump="chat"]',p.wrap).setAttribute('aria-expanded','false');break;
         case 'mic':await microphone(p);break;
         case 'camera':await camera(p);break;
         case 'enable-playback':case 'toggle':toggle(p);break;

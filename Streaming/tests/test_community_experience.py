@@ -59,11 +59,11 @@ class ExperienceTests(unittest.TestCase):
         self.assertEqual(self.call(self.b,cpath,{'body':'Editar bloqueado'},'PATCH').status_code,403)
         self.assertEqual(self.call(self.a,cpath,m='DELETE').status_code,200)
     def test_reel_story_composition_validation_and_retention(self):
-        image=self.upload().json['url'];comp={'layout':'grid','items':[{'url':image,'type':'image','duration':5}], 'layers':[{'type':'link','text':'Saiba mais','url':'https://example.com/news','x':40,'y':65}], 'music':{'url':'https://youtu.be/abcdefghijk','title':'Minha faixa'}}
+        image=self.upload(content=b'\x00\x00\x00\x20ftypisom'+b'\0'*28).json['url'];comp={'layout':'sequence','items':[{'url':image,'type':'video','duration':5}], 'layers':[{'type':'link','text':'Saiba mais','url':'https://example.com/news','x':40,'y':65}], 'music':{'url':'https://youtu.be/abcdefghijk','title':'Minha faixa'}}
         r=self.call(self.a,'/community/posts',{'kind':'reel','title':'Reel completo','composition':comp});self.assertEqual(r.status_code,201,r.json);pid=r.json['id']
         p=self.b.get('/api/community/posts/'+pid).json['post'];self.assertEqual(p['media_type'],'composition');self.assertEqual(p['composition']['duration'],5);self.assertEqual(p['composition']['music']['type'],'youtube')
         self.call(self.a,'/community/posts/'+pid+'/controls',{'status':'archived'},'PATCH')
-        r=self.call(self.a,'/community/stories',{'body':'Meu story','composition':comp});self.assertEqual(r.status_code,201,r.json);sid=r.json['id']
+        comp['layout']='sequence';r=self.call(self.a,'/community/stories',{'body':'Meu story','composition':comp});self.assertEqual(r.status_code,201,r.json);sid=r.json['id']
         self.assertIsNone(self.db.execute('SELECT expires_at FROM community_assets WHERE id=?',(image.rsplit('/',1)[-1],)).fetchone()[0]);self.assertEqual(self.b.get('/api/community/stories/'+sid).json['story']['composition']['layers'][0]['x'],40)
         self.assertEqual(self.call(self.b,'/community/stories',{'composition':comp}).status_code,404)
         for bad in [{'layers':[{'type':'text','text':'a','x':float('inf')}]},{'layers':[{'type':'link','text':'A','url':'javascript:alert(1)'}]},{'items':[{'url':image,'type':'image','duration':100}]*2}]:

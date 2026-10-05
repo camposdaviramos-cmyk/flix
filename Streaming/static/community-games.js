@@ -28,7 +28,7 @@ window.CommunityGames=(()=>{
     const joined=g.players.some(p=>p.id===state.user.id),title=g.kind==='colors'?'Cores':'Traço';
     const heading=`<div class="fg-heading"><div><span class="cs-eyebrow">${g.kind==='colors'?'LOUNGE CINEMA':'ATELIÊ NOTURNO'} · ${g.players.length}/8 JOGADORES</span><h2>${title}<small>${({lobby:'Aguardando a turma',playing:'Ao vivo na sua sala',finished:'Resultado da partida'})[g.status]}</small></h2></div>${isHost&&g.status!=='finished'?btn('cancel','Encerrar','', 'subtle'):''}</div>`;
     let body='';
-    if(g.status==='lobby')body=`<div class="fg-lobby"><span class="fg-lobby-emblem">${icon(g.kind==='colors'?'card':'edit')}</span><span class="cs-eyebrow">A MELHOR PARTE É A COMPANHIA</span><h3>${g.kind==='colors'?'A mesa está pronta.':'Todo mundo tem seu traço.'}</h3><p>${joined?'Você já está na partida. Chame a turma!':'Entre na partida e jogue com a sala.'}<br>O anfitrião começa com pelo menos duas pessoas.</p><div>${btn(joined?'leave':'join',joined?'Sair da partida':'Quero jogar','',joined?'subtle':'primary')}${isHost?btn('start','Iniciar partida '+icon('play'),g.players.length<2?'disabled':'','primary'):''}</div><small>Voz, chat e emojis continuam aqui, dentro do jogo.</small></div>`;
+    if(g.status==='lobby')body=`<div class="fg-lobby"><span class="fg-lobby-emblem">${icon(g.kind==='colors'?'card':'edit')}</span><span class="cs-eyebrow">A MELHOR PARTE É A COMPANHIA</span><h3>${g.kind==='colors'?'A mesa está pronta.':'Todo mundo tem seu traço.'}</h3><p>${joined?'Você já está na partida. Chame a turma!':'Entre na partida e jogue com a sala.'}<br>O anfitrião começa com pelo menos duas pessoas.</p><div>${btn(joined?'leave':'join',joined?'Sair da partida':g.entry_coins?'Jogar · '+g.entry_coins+' moedas':'Quero jogar','',joined?'subtle':'primary')}${isHost?btn('start','Iniciar partida '+icon('play'),g.players.length<2?'disabled':'','primary'):''}</div><small>Voz, chat e emojis continuam aqui, dentro do jogo.</small></div>`;
     if(g.status==='finished')body=`<div class="fg-result"><div class="fg-trophy">🏆</div><span class="cs-eyebrow">ESSA PARTIDA VIROU HISTÓRIA</span><h3>${g.winners.length?g.players.filter(p=>g.winners.includes(p.id)).map(p=>esc(p.name)).join(' e ')+' venceu!':'Partida concluída'}</h3><p>Seus pontos e conquistas já estão no ranking da comunidade.</p><div><a class="fg-button" href="/comunidade?tab=games#cs-leaderboard">Ver ranking ${icon('arrow')}</a>${isHost?btn('create','Jogar novamente',`data-kind="${g.kind}"`,'primary'):''}</div></div>`;
     if(g.status==='playing'&&g.kind==='colors'){
       const myTurn=g.turn===state.user.id,uno=joined&&((myTurn&&g.hand.length===2)||(g.hand.length===1&&g.uno_pending===state.user.id));
@@ -54,7 +54,7 @@ window.CommunityGames=(()=>{
     if(s.wild&&(!g||g.status!=='playing'||g.turn!==state.user.id||!g.hand.includes(s.wild))){$('.fg-choice-slot',s.root).innerHTML='';s.wild=null;}
     if(!g||g.status!=='lobby'||g.players.some(p=>p.id===state.user.id)||dismissed){slot.innerHTML='';return;}
     if(slot.dataset.gameId===g.id&&slot.children.length)return;slot.dataset.gameId=g.id;
-    slot.innerHTML=`<section class="fg-invite" role="dialog" aria-label="Convite para jogar"><img src="${CommunityStudio.art[g.kind]}" alt="">${btn('dismiss-invite',icon('close'),'aria-label="Dispensar convite"','fg-invite-close')}<div><span class="cs-eyebrow">CONVITE DA SUA SALA</span><h3>${esc(name(s,s.host))} abriu ${g.kind==='colors'?'uma mesa de Cores':'um ateliê de Traço'}.</h3><p>Jogue com a turma. A conversa continua na partida!</p>${btn('join','Aceitar e jogar','','primary')}${btn('dismiss-invite','Agora não','','subtle')}</div></section>`;
+    slot.innerHTML=`<section class="fg-invite" role="dialog" aria-label="Convite para jogar"><img src="${CommunityStudio.art[g.kind]}" alt="">${btn('dismiss-invite',icon('close'),'aria-label="Dispensar convite"','fg-invite-close')}<div><span class="cs-eyebrow">CONVITE DA SUA SALA</span><h3>${esc(name(s,s.host))} abriu ${g.kind==='colors'?'uma mesa de Cores':'um ateliê de Traço'}.</h3><p>Jogue com a turma. A conversa continua na partida!</p>${btn('join',g.entry_coins?'Jogar · '+g.entry_coins+' moedas':'Aceitar e jogar','','primary')}${btn('dismiss-invite','Agora não','','subtle')}</div></section>`;
   }
   function dismiss(s){try{sessionStorage.setItem('flix-game-invite:'+state.user.id+':'+s.game.id,'1');}catch(_){}s.invites.innerHTML='';}
   function effect(s,text,cls=''){const el=document.createElement('div');el.className='fg-event '+cls;el.textContent=text;$('.fg-effects',s.root).append(el);setTimeout(()=>el.remove(),2400);}
@@ -91,14 +91,14 @@ window.CommunityGames=(()=>{
   }
   function showError(s,text){if(s&&!s.dead){const el=$('.sx-game-error',s.root);if(el)el.textContent=text;}}
   async function move(s,body){if(s.moving)throw Error('Aguarde a jogada anterior.');s.moving=true;s.epoch++;const gameId=s.game?.id;
-    try{let d;try{d=await Community.api('/rooms/'+s.id+'/game','POST',{revision:s.game?.revision,game_id:gameId,round:s.game?.round,...body});}
+    try{if(body.action==='join'&&s.game?.entry_coins){if(body.confirm_coins!==s.game.entry_coins){Community.modal('Entrar na partida',`<p>A entrada custa <strong>${s.game.entry_coins} moedas</strong>. Partidas canceladas antes de começar devolvem a entrada.</p><button class="btn btn-primary" data-game="join" data-confirm-coins="${s.game.entry_coins}">Confirmar · ${s.game.entry_coins} moedas</button><a class="btn btn-secondary" href="/carteira">Ver carteira</a>`);return;}closeModal();}let d;try{d=await Community.api('/rooms/'+s.id+'/game','POST',{revision:s.game?.revision,game_id:gameId,round:s.game?.round,...body});}
       catch(err){if(err.status!==409)throw err;const fresh=await Community.api('/rooms/'+s.id+'/game');if(s.dead)return;update(s,fresh.game);if(body.action==='cancel'&&s.game?.id===gameId&&['playing','lobby'].includes(s.game.status))d=await Community.api('/rooms/'+s.id+'/game','POST',{...body,revision:s.game.revision,game_id:gameId});else throw err;}
       if(s.dead)return;showError(s,'');update(s,d.game);
     }finally{s.moving=false;s.epoch++;}
   }
   async function sendMessage(s,body){const d=await Community.api('/rooms/'+s.id+'/messages','POST',{body});if(d.room)roomState(d.room,s.permissions||{});}
   document.addEventListener('click',async e=>{
-    const b=e.target.closest('[data-game]'),s=active;if(!b||!s)return;e.preventDefault();e.stopImmediatePropagation();if(b.disabled)return;const a=b.dataset.game;
+    const b=e.target.closest('[data-game]'),s=active;if(!b||!s)return;e.preventDefault();e.stopImmediatePropagation();if(b.disabled)return;const a=b.dataset.game;if(a==='join'&&b.dataset.confirmCoins)b._confirmedCoins=Number(b.dataset.confirmCoins);
     try{
       if(a==='dismiss-invite'){dismiss(s);return;}
       if(a==='chat'){const p=$('.fg-chat',s.root);p.hidden=!p.hidden;$('[data-game=chat]',s.root).setAttribute('aria-expanded',String(!p.hidden));if(!p.hidden){$('.fg-chat-log',s.root).scrollTop=999999;$('input',p).focus({preventScroll:true});}return;}
@@ -110,7 +110,7 @@ window.CommunityGames=(()=>{
       if(a==='cancel'&&!b.dataset.confirm){Community.modal('Encerrar a partida?',`<p>A partida será encerrada para todas as pessoas, sem distribuir pontos.</p><div class="cm-actions">${btn('cancel','Confirmar encerramento','data-confirm="1"')}<button class="sx-button" data-action="close">Continuar jogando</button></div>`);return;}
       if(a==='play'){s.cardOrigin=b.getBoundingClientRect();if(b.dataset.card.startsWith('wild:')){s.wild=b.dataset.card;$('.fg-choice-slot',s.root).innerHTML=`<section class="fg-wild" role="dialog" aria-label="Escolha a cor do coringa"><h3>Qual é a próxima cor?</h3><div>${Object.entries(colors).map(([c,n])=>btn('wild-color',`<i class="fg-color-dot ${c}"></i>${n}`,`data-color="${c}"`)).join('')}</div>${btn('wild-close','Voltar para a mão')}</section>`;return;}}
       if(a==='wild-close'){$('.fg-choice-slot',s.root).innerHTML='';s.wild=null;return;}
-      b.disabled=true;await move(s,{action:a==='wild-color'?'play':a,kind:b.dataset.kind,card:a==='wild-color'?s.wild:b.dataset.card,color:b.dataset.color});
+      b.disabled=true;await move(s,{confirm_coins:b._confirmedCoins,action:a==='wild-color'?'play':a,kind:b.dataset.kind,card:a==='wild-color'?s.wild:b.dataset.card,color:b.dataset.color});
       if(a==='wild-color'){$('.fg-choice-slot',s.root).innerHTML='';s.wild=null;}if(a==='join')s.invites.innerHTML='';if(a==='cancel')closeModal();
     }catch(err){showError(s,err.message);}finally{if(b.isConnected){b.disabled=false;if(a==='mic')b.disabled=!s.permissions?.canSpeak;}}
   },true);

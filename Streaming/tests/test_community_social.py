@@ -26,7 +26,7 @@ class SocialTests(unittest.TestCase):
         row=self.db.execute('SELECT * FROM community_games WHERE room_id=?',(path.split('/')[-1],)).fetchone();state=json.loads(row['state']);fn(state)
         self.db.execute('UPDATE community_games SET state=? WHERE room_id=?',(json.dumps(state),row['room_id']));self.db.commit()
     def test_story_expiration_views_reactions_and_reports(self):
-        r=self.call(self.a,'/community/stories',{'body':'Noite de cinema 🎬','background':'#765432'});self.assertEqual(r.status_code,201,r.json);sid=r.json['id']
+        r=self.call(self.a,'/community/stories',{'body':'Noite de cinema 🎬','background':'#765432','media_url':self.upload().json['url']});self.assertEqual(r.status_code,201,r.json);sid=r.json['id']
         self.assertEqual(self.app.test_client().get('/api/community/stories').status_code,401)
         for _ in range(2):self.call(self.b,'/community/stories/'+sid+'/view')
         stories=self.a.get('/api/community/stories').json['stories'];self.assertEqual(stories[0]['views'],1)
@@ -57,7 +57,7 @@ class SocialTests(unittest.TestCase):
         content=b'\x00\x00\x00\x20ftypisom'+b'\x00'*300
         r=self.upload(content=content);self.assertEqual(r.status_code,201,r.json);url=r.json['url']
         partial=self.a.get(url,headers={'Range':'bytes=0-31'});self.assertEqual(partial.status_code,206);self.assertEqual(len(partial.data),32);partial.close()
-        pid=self.post(kind='reel',url=url);self.assertEqual(self.a.get('/api/community/feed?kind=reel').json['posts'][0]['id'],pid)
+        pid=self.call(self.a,'/community/posts',{'kind':'reel','title':'Reel','composition':{'items':[{'url':url,'type':'video','duration':10}]}}).json['id'];self.assertEqual(self.a.get('/api/community/feed?kind=reel').json['posts'][0]['id'],pid)
         image=self.upload().json['url']
         self.assertEqual(self.call(self.a,'/community/profile',{'name':'Alice','cover':image},'PATCH').status_code,200)
         self.assertEqual(self.call(self.a,'/community/stories',{'media_url':image}).status_code,201)
@@ -118,7 +118,7 @@ class SocialTests(unittest.TestCase):
         self.game(self.a,path,'guess',round=b['round'],text=b['word']);self.alter(path,lambda s:s.update(deadline=time.time()-1))
         self.assertEqual(self.game(self.a,path).json['game']['status'],'finished');self.assertEqual(self.db.execute('SELECT COUNT(*) FROM community_game_results').fetchone()[0],2)
     def test_admin_social_can_preview_and_moderate_without_game_secrets(self):
-        path,g=self.start_game('draw');story=self.call(self.a,'/community/stories',{'body':'Story a moderar'}).json['id'];self.upload()
+        path,g=self.start_game('draw');story=self.call(self.a,'/community/stories',{'body':'Story a moderar','media_url':self.upload().json['url']}).json['id'];self.upload()
         self.assertEqual(self.b.get('/api/admin/community/social').status_code,403)
         response=self.admin.get('/api/admin/community/social');self.assertEqual(response.status_code,200,response.json)
         self.assertEqual(len(response.json['games']),1);self.assertNotIn('state',response.json['games'][0]);self.assertNotIn('word',response.json['games'][0])
