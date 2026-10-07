@@ -17,7 +17,7 @@ def absolute(base, value):
 
 def metadata(db, setting, path):
     base = setting('public_url', 'https://flix.devspacey.com').rstrip('/')
-    brand = setting('brand', 'Flix')
+    brand = setting('brand', 'WorkTV')
     items = [dict(row) for row in db.execute('SELECT * FROM content WHERE published=1 ORDER BY created_at DESC,id DESC')]
     item = next((i for i in items if path == content_path(i).lstrip('/')), None)
     public = path in PAGES or item is not None
@@ -34,9 +34,9 @@ def metadata(db, setting, path):
         description = 'Compartilhe filmes, séries e músicas, encontre amigos e participe de sessões juntos.'
     if path=='historico':
         title=f'Assistidos recentemente | {brand}'
-        description='Seus últimos filmes, séries e canais no Flix.'
+        description='Seus últimos filmes, séries e canais na WorkTV.'
     if re.fullmatch(r'sala/[A-Za-z0-9_-]{12}',path):
-        title = f'Convite FlixJump | {brand}'
+        title = f'Convite WorkTV Juntos | {brand}'
         description = 'Assista junto com seus amigos. Entre na conta e aguarde a aprovação do anfitrião.'
     description = re.sub(r'\s+', ' ', description).strip()[:200]
     url = base + ('/' + path if path else '/')

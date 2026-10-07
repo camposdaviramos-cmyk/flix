@@ -1,0 +1,60 @@
+/* WorkTV identity and Astro. Existing component APIs remain compatible. */
+:root{--bg:#070e1c;--panel:#0e1a2c;--panel2:#14233a;--text:#f4f8ff;--muted:#a0b1c8;--red:#1675df;--red2:#53b6ff;--vx-accent:#238cff;--wt-blue:#238cff;--wt-cyan:#62d6ff}
+body{background:var(--bg)}
+.brand{gap:9px;letter-spacing:-1.3px;font-size:30px;white-space:nowrap}
+.brand .brand-mark{background:url('/static/assets/worktv-icon.svg') center/contain no-repeat!important;width:32px!important;height:32px!important;clip-path:none;transform:none;margin:0;flex:none}
+.brand-mark:before,.brand-mark:after{display:none}
+.brand>.brand-name{font-size:inherit;line-height:1;color:#f4f8ff;margin:0}
+.brand-name b{color:#62c4ff;font-weight:800}
+.header-inner{gap:30px}.header nav{gap:22px}.header-actions{gap:16px}
+.btn-primary{background:linear-gradient(115deg,#1675df,#1462c4);box-shadow:0 7px 25px #1688ef25}
+.btn-primary:hover{background:#2186f0;box-shadow:0 8px 32px #1688ef40}
+.header{background:linear-gradient(#070e1cf5,#070e1c20)}
+.vx-enabled.vx-scrolled .header{background:#091426eb}
+.hero h1 em{color:#62c4ff}.stars,.hero .eyebrow{color:#a1dcff}
+.plan-card.featured{border-color:#368eeb}.avatar{background:#163c66;color:#b5e5ff}
+.boot .brand{color:#62c4ff}.boot .brand span{color:#62c4ff}
+button:focus-visible,a:focus-visible,summary:focus-visible{outline-color:#6ed9ff}
+/* A single interactive character, integrated into the hero. */
+.wt-hero,.vx-enabled .wt-hero{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,.8fr);gap:40px;align-items:center;padding:150px max(56px,calc((100vw - 1320px)/2)) 110px;min-height:min(860px,max(730px,90svh));background:radial-gradient(ellipse at 80% 42%,#113963 0%,#0b203b 25%,#070e1c 65%);isolation:isolate}
+.wt-hero .hero-art{display:block!important;background-image:url('/static/assets/worktv-world-v1.webp')!important;background-position:62% center;opacity:.92;filter:saturate(1.08);will-change:transform}
+.wt-hero:after,.vx-enabled .wt-hero:after{z-index:1;background:linear-gradient(90deg,#070e1ceb 0%,#070e1cbd 28%,#070e1c40 57%,#070e1c0d 85%),linear-gradient(0deg,#070e1c,transparent 25%,#070e1c12 80%);pointer-events:none}
+.wt-hero .hero-content{width:auto;margin:0;padding:0;min-width:0;z-index:3}
+.wt-hero h1{font-size:clamp(46px,5.1vw,76px);letter-spacing:-2.5px;line-height:1.06}
+.wt-hero .hero-description{font-size:16px;line-height:1.7}
+.wt-hero .feature-caption,.wt-hero .vx-orbital-label{display:none!important}
+.wt-hero .vx-atmosphere{display:block;z-index:2}.wt-hero .vx-starfield{opacity:.8}.wt-hero .vx-orbit{display:block;left:58%;top:10%;opacity:.55}.wt-hero .vx-coordinate{z-index:3;opacity:.75}.wt-hero .vx-explore-cue{z-index:3}.wt-hero .vx-hero-line{display:block}
+.wt-hero .hero-bottom{left:0;right:0;bottom:28px}
+.wt-astro{position:relative;width:100%;max-width:470px;margin:auto;z-index:3;isolation:isolate}
+.wt-hero>.wt-astro{transform:translateX(clamp(36px,5.2vw,84px))}
+.wt-astro:before{content:'';position:absolute;inset:10% -8% 15%;background:radial-gradient(ellipse,#368cdf19,transparent 65%);z-index:-1;pointer-events:none}
+.wt-astro:after{content:'';position:absolute;width:38%;height:18px;bottom:35px;left:31%;border-radius:50%;background:#2b9aff15;filter:blur(10px);pointer-events:none;z-index:-1}
+.wt-astro-touch{display:block;position:relative;width:100%;height:445px;background:none;border:0;padding:0;margin:0;border-radius:35%;cursor:grab;touch-action:pan-y;outline-offset:3px}
+.wt-astro-touch:active{cursor:grabbing}
+.wt-scene{display:block;width:100%;height:100%;position:relative;isolation:isolate;pointer-events:none}
+.wt-scene canvas{position:absolute;inset:0;width:100%;height:100%;z-index:2}
+.wt-poster{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;z-index:1}
+.wt-scene[data-ready=true] .wt-poster{visibility:hidden}
+.wt-scene[data-ready=fallback] canvas{display:none}
+#wt-astro-hint{text-align:center;color:#9db8d5;font-size:11px;letter-spacing:.4px;margin:0}
+.wt-astro-bubble{position:absolute;top:0;right:0;max-width:230px;z-index:4;padding:12px 17px;border:1px solid #8dceff38;border-radius:18px 18px 4px 18px;background:#17304bee;backdrop-filter:blur(10px);color:#e0f2ff;font-size:13px;box-shadow:0 8px 32px #0003;pointer-events:none}
+.wt-astro-bubble[hidden]{display:none}
+.wt-astro-member{display:flex;justify-content:center;margin-block:0 30px;position:relative;background:radial-gradient(ellipse at center,#12325366,transparent 65%)}
+.wt-astro-member .wt-astro{max-width:300px}.wt-astro-member .wt-astro-touch{height:260px}
+@media(min-width:1101px) and (max-width:1350px){.header nav{gap:15px}.header-inner{gap:22px}.header-actions{gap:12px}.fj-nav span{display:none}}
+@media(max-width:1100px){.header-inner{justify-content:space-between}.header-actions{margin-left:auto}.header nav{display:none;position:absolute;top:100%;left:0;right:0;height:auto;background:#0a172bf5;backdrop-filter:blur(20px);padding:23px 25px;flex-direction:column;align-items:start;gap:22px;border-bottom:1px solid var(--line)}.header nav.open{display:flex}.header nav a{font-size:14px}.header nav a.active:after{display:none}.header nav a:nth-last-child(1){display:block}.mobile-toggle{display:inline-flex}.wt-hero,.vx-enabled .wt-hero{padding-inline:40px;gap:10px;grid-template-columns:minmax(0,1.2fr) minmax(0,.8fr)}.wt-hero h1{font-size:55px}.wt-astro-touch{height:345px}.wt-hero .hero-description{font-size:14px}.wt-hero .hero-buttons{flex-wrap:wrap}.wt-hero .hero-proof{display:none}}
+@media(max-width:760px){.wt-hero,.vx-enabled .wt-hero{grid-template-columns:1fr;gap:8px;min-height:0;padding:135px 24px 65px;background:radial-gradient(ellipse at 50% 75%,#103456,#070e1c 60%)}.wt-hero h1{font-size:clamp(43px,7.6vw,58px);letter-spacing:-1.5px}.wt-hero .hero-content{width:100%}.wt-hero .eyebrow{font-size:8px;letter-spacing:1.5px}.wt-hero .hero-description{font-size:14px}.wt-hero .hero-note{flex-wrap:wrap;gap:8px 14px}.wt-astro{max-width:320px}.wt-astro-touch{height:290px}.wt-hero .hero-bottom{bottom:13px}.wt-hero .hero-dots{display:none}.wt-astro-bubble{top:4px;font-size:12px}.wt-astro-member .wt-astro-touch{height:235px}}
+@media(max-width:600px){.brand{font-size:25px}.brand .brand-mark{width:28px!important;height:28px!important}.header-inner{gap:12px}.header-actions{gap:13px}.wt-hero .hero-buttons{gap:10px}.wt-hero .hero-buttons .btn{padding:12px 16px}}
+
+/* Environment motion complements the site's original particle/parallax system. */
+.wt-space-effects{position:absolute;inset:0;z-index:2;pointer-events:none;overflow:hidden}
+.wt-space-haze{position:absolute;inset:32% -15% -20%;background:radial-gradient(ellipse at 75% 72%,#4099eb26,transparent 45%),radial-gradient(ellipse at 40% 85%,#53d8ff18,transparent 48%);filter:blur(24px);animation:wt-nebula-drift 19s ease-in-out infinite alternate}
+.wt-meteor{position:absolute;left:78%;top:12%;width:135px;height:1px;background:linear-gradient(90deg,transparent,#c5eeff);box-shadow:0 0 7px #72bdff;opacity:0;transform:rotate(-30deg);animation:wt-meteor-flight 11s linear infinite;animation-delay:2s}
+.wt-meteor-two{left:56%;top:25%;width:90px;animation-duration:16s;animation-delay:7s}
+@keyframes wt-nebula-drift{from{transform:translate3d(-3%,1%,0) scale(1);opacity:.5}to{transform:translate3d(4%,-4%,0) scale(1.12);opacity:1}}
+@keyframes wt-meteor-flight{0%,65%{opacity:0;transform:translate3d(0,0,0) rotate(-30deg)}67%{opacity:.8}77%{opacity:0;transform:translate3d(-360px,208px,0) rotate(-30deg)}100%{opacity:0;transform:translate3d(-360px,208px,0) rotate(-30deg)}}
+@media(max-width:1100px){.wt-hero>.wt-astro{transform:translateX(28px)}}
+@media(max-width:760px){.wt-hero>.wt-astro{transform:translateX(22px)}.wt-hero .hero-art{background-position:72% center;opacity:.9}.wt-hero:after,.vx-enabled .wt-hero:after{background:linear-gradient(180deg,#070e1cdb 0%,#070e1cb0 35%,#070e1c20 63%,#070e1c33 82%,#070e1c 100%)}.wt-hero .vx-orbit{left:32%;top:45%;opacity:.4}.wt-hero .vx-coordinate,.wt-hero .vx-explore-cue{display:none}.wt-space-haze{inset:45% -20% -10%}}
+@media(prefers-reduced-motion:reduce){.wt-space-effects *{animation:none!important}.wt-meteor{display:none}}
+
+.wt-hero #wt-astro-hint{color:#c2ddf5;text-shadow:0 2px 5px #000,0 0 12px #071324}.wt-hero .hero-note{color:#c4d4e6;text-shadow:0 1px 5px #0008}

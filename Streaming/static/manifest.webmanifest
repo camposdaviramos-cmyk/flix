@@ -1,1 +1,59 @@
-{"id":"/","name":"Flix — Filmes e comunidade","short_name":"Flix","description":"Filmes, séries, salas ao vivo, jogos e conversas com a sua comunidade.","lang":"pt-BR","start_url":"/comunidade?app=1","scope":"/","display":"standalone","background_color":"#121016","theme_color":"#121016","orientation":"any","categories":["entertainment","social"],"icons":[{"src":"/static/assets/flix-icon-192.png","sizes":"192x192","type":"image/png","purpose":"any"},{"src":"/static/assets/flix-icon-512.png","sizes":"512x512","type":"image/png","purpose":"any"},{"src":"/static/assets/flix-maskable.png","sizes":"512x512","type":"image/png","purpose":"maskable"}],"shortcuts":[{"name":"Conversas","url":"/comunidade?tab=friends","icons":[{"src":"/static/assets/flix-icon-192.png","sizes":"192x192"}]},{"name":"Salas e lives","url":"/comunidade?tab=rooms"},{"name":"Filmes","url":"/filmes"}]}
+{
+  "id": "/",
+  "name": "WorkTV — Filmes e comunidade",
+  "short_name": "WorkTV",
+  "description": "Filmes, séries, salas ao vivo, jogos e conversas com a sua comunidade.",
+  "lang": "pt-BR",
+  "start_url": "/?app=1",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#070e1c",
+  "theme_color": "#070e1c",
+  "orientation": "any",
+  "categories": [
+    "entertainment",
+    "social"
+  ],
+  "icons": [
+    {
+      "src": "/static/assets/worktv-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/static/assets/worktv-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/static/assets/worktv-maskable.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Filmes",
+      "url": "/filmes"
+    },
+    {
+      "name": "TV ao vivo",
+      "url": "/tv"
+    },
+    {
+      "name": "Modo TV",
+      "url": "/?tv=1"
+    },
+    {
+      "name": "Comunidade",
+      "url": "/comunidade"
+    }
+  ],
+  "display_override": [
+    "standalone",
+    "minimal-ui"
+  ]
+}

@@ -1,19 +1,50 @@
 'use strict';
-const CACHE='flix-shell-v8',OFFLINE='/static/offline.html';
-self.addEventListener('install',e=>{e.waitUntil(caches.open(CACHE).then(c=>c.addAll([OFFLINE,'/static/assets/flix-icon-192.png','/static/assets/flix-icon-512.png'])).then(()=>self.skipWaiting()));});
+// Cache only public, same-origin UI resources. Never API data, documents or streams.
+const CACHE='flix-shell-worktv-tv-v2',OFFLINE='/static/offline.html';
+const SHELL=[OFFLINE,'/static/offline.js','/static/assets/worktv-icon-192.png','/static/assets/worktv-icon-512.png'];
+self.addEventListener('install',e=>{e.waitUntil(caches.open(CACHE).then(c=>c.addAll(SHELL)).then(()=>self.skipWaiting()));});
 self.addEventListener('activate',e=>{e.waitUntil(Promise.all([caches.keys().then(keys=>Promise.all(keys.filter(k=>k.startsWith('flix-shell-')&&k!==CACHE).map(k=>caches.delete(k)))),self.clients.claim()]));});
-self.addEventListener('fetch',e=>{const u=new URL(e.request.url);if(e.request.method!=='GET'||u.origin!==self.location.origin||u.pathname.startsWith('/api/'))return;if([OFFLINE,'/static/assets/flix-icon-192.png','/static/assets/flix-icon-512.png'].includes(u.pathname)){e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request)));return;}if(e.request.mode==='navigate')e.respondWith(fetch(e.request).catch(()=>caches.match(OFFLINE)));});
+self.addEventListener('fetch',e=>{
+ const u=new URL(e.request.url);
+ if(e.request.method!=='GET'||u.origin!==self.location.origin||u.pathname.startsWith('/api/')||e.request.headers.has('range'))return;
+ if(e.request.mode==='navigate'){
+   e.respondWith((async()=>{
+     let timer;
+     try{
+       const response=await Promise.race([fetch(e.request),new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('timeout')),10000);})]);
+       if(response.status>=500)throw Error('unavailable');
+       return response;
+     }catch(_){return await caches.match(OFFLINE)||Response.error();}
+     finally{clearTimeout(timer);}
+   })());return;
+ }
+ // Versioned local scripts/styles only; media and third-party URLs bypass the worker.
+ const cacheable=SHELL.includes(u.pathname)||(/^\/static\/[^/]+\.(js|css)$/.test(u.pathname)&&u.searchParams.has('v'));
+ if(!cacheable)return;
+ e.respondWith((async()=>{
+   const cache=await caches.open(CACHE),cached=await cache.match(e.request);
+   if(cached)return cached;
+   const response=await fetch(e.request);
+   if(response.ok&&response.type==='basic'&&!/no-store|private/i.test(response.headers.get('cache-control')||'')){
+     await cache.put(e.request,response.clone());
+     const keys=await cache.keys();
+     const optional=keys.filter(k=>!SHELL.includes(new URL(k.url).pathname));
+     await Promise.all(optional.slice(0,Math.max(0,optional.length-90)).map(k=>cache.delete(k)));
+   }
+   return response;
+ })());
+});
 
 function localURL(value){try{const u=new URL(value,self.location.origin);if(u.origin===self.location.origin)return u.pathname+u.search+u.hash;}catch(_){}return '/comunidade';}
 self.addEventListener('push',e=>{e.waitUntil((async()=>{
  let d={};try{d=e.data?.json()||{};}catch(_){}
  const expired=d.type==='call_incoming'&&d.expires&&d.expires<Date.now()/1000,incoming=d.type==='call_incoming'&&!expired;
  const data={url:localURL(d.url),id:d.id,type:d.type,callId:d.callId,callType:d.callType,callState:d.callState,expires:d.expires,conversationId:d.conversationId};
- const actions=(incoming?[{action:'answer',title:'Atender'},{action:'decline',title:'Recusar'}]:[{action:'open',title:d.type?.includes('message')?'Abrir conversa':'Abrir Flix'}]).slice(0,self.Notification?.maxActions??2);
- let avatar='/static/assets/flix-icon-192.png';try{const url=new URL(d.icon,self.location.origin);if(url.protocol==='https:'||url.origin===self.location.origin)avatar=url.href;}catch(_){}
- const options={body:expired?'A chamada não foi atendida. Abra a conversa para retornar.':d.body||'Confira suas novidades.',icon:avatar,badge:'/static/assets/flix-badge.png',tag:d.tag||'flix',data,actions,silent:!!d.silent,requireInteraction:incoming,renotify:incoming};
+ const actions=(incoming?[{action:'answer',title:'Atender'},{action:'decline',title:'Recusar'}]:[{action:'open',title:d.type?.includes('message')?'Abrir conversa':'Abrir WorkTV'}]).slice(0,self.Notification?.maxActions??2);
+ let avatar='/static/assets/worktv-icon-192.png';try{const url=new URL(d.icon,self.location.origin);if(url.protocol==='https:'||url.origin===self.location.origin)avatar=url.href;}catch(_){}
+ const options={body:expired?'A chamada não foi atendida. Abra a conversa para retornar.':d.body||'Confira suas novidades.',icon:avatar,badge:'/static/assets/worktv-badge.png',tag:d.tag||'flix',data,actions,silent:!!d.silent,requireInteraction:incoming,renotify:incoming};
  if(!options.silent)options.vibrate=incoming?[250,100,250,100,250]:[100,60,100];
- await self.registration.showNotification(expired?'Chamada perdida':d.title||'Flix',options);
+ await self.registration.showNotification(expired?'Chamada perdida':d.title||'WorkTV',options);
  if(self.navigator?.setAppBadge&&d.badge)await self.navigator.setAppBadge(d.badge);
  const tabs=await self.clients.matchAll({type:'window',includeUncontrolled:true});for(const tab of tabs)tab.postMessage({type:'flix-notification',notification:data});
 })());});

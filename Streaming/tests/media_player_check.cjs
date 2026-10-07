@@ -34,3 +34,13 @@ const old=setup(appleDevices[1],{supported:false});let oldMessage='';const op=ol
 const blocked=setup(appleDevices[1]);let blockedMessage='';const bp=blocked.api.attach(blocked.video,'/a.m3u8',{hls:true,onError:m=>blockedMessage=m});bp.handlePlayError({name:'NotAllowedError'});assert.match(blockedMessage,/Toque/);assert.equal(bp.mode,'native-hls');bp.handlePlayError({name:'AbortError'});assert.equal(blocked.stats().created,0);
 blocked.listeners.get('playing')();blocked.video.error={code:3};blocked.listeners.get('error')();assert.equal(bp.mode,'native-hls');assert.match(blockedMessage,/decodificar/);
 console.log('PASS: iPhone native-to-MMS fallback; signed URL unchanged; late promise errors; no fallback loops; autoplay block; legacy iOS; cleanup.');
+
+for (const userAgent of ['SMART-TV Tizen 7.0', 'Web0S Linux SmartTV', 'Android TV', 'Android AFTMM']) {
+ const tv=setup({vendor:'',platform:'Linux',userAgent});
+ const engine=tv.api.attach(tv.video,'https://media.test/tv.m3u8',{hls:true});
+ assert.equal(engine.mode,'native-hls');
+ tv.video.error={code:4};tv.listeners.get('error')();
+ assert.equal(engine.mode,'hlsjs');assert.equal(tv.stats().created,1);engine.destroy();
+ const noNative=setup({userAgent},{native:false});assert.equal(noNative.api.attach(noNative.video,'/tv.m3u8',{hls:true}).mode,'hlsjs');
+}
+console.log('PASS: TV native HLS preference, native startup fallback and capability fallback.');

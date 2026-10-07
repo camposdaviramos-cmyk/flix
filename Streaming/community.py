@@ -494,7 +494,7 @@ def register_community(app, db, auth, data, error):
         if source_post and source_post['space_id'] and db().execute("SELECT 1 FROM social_spaces WHERE id=? AND privacy='private'",(source_post['space_id'],)).fetchone():raise error('Use uma publicação pública para abrir uma sala compartilhável.')
         source=source_post['url'] if source_post else d.get('url')
         url,media=content_url(source,error,media=True,optional=kind in ('voice','video','live','music'))
-        if kind in ('voice','video') and url:raise error('Escolha uma sala JumpFlix, música ou live para compartilhar mídia.')
+        if kind in ('voice','video') and url:raise error('Escolha uma sala WorkTV Juntos, música ou live para compartilhar mídia.')
         limit('community_rooms','host_id=?',(uid(),),12,3600)
         community_social.retain_assets(db(),url)
         cover,_=community_publishing.checked_url(d.get('cover',''),db(),error,external_url,image=True,optional=True)

@@ -11,9 +11,8 @@
   const select = (s, root = document) => root.querySelector(s);
   const selectAll = (s, root = document) => [...root.querySelectorAll(s)];
   const ease = 'cubic-bezier(.16,1,.3,1)';
-  let engine = null, introPlayed = false, paused = false, chromeReady = false;
-  try { paused = localStorage.getItem('vyra-motion-paused') === 'true'; } catch (_) {}
-  const reduced = () => media.matches || paused;
+  let engine = null, introPlayed = false, chromeReady = false;
+  const reduced = () => media.matches || !!window.WorkTVPlatform?.tv;
 
   function createChrome() {
     if (chromeReady) return;
@@ -24,16 +23,7 @@
     const cursor = document.createElement('div');
     cursor.className = 'vx-cursor';
     cursor.setAttribute('aria-hidden', 'true');
-    const toggle = document.createElement('button');
-    toggle.className = 'vx-motion-toggle';
-    toggle.type = 'button';
-    toggle.innerHTML = '<span class="vx-motion-bars" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span class="vx-motion-label"></span>';
-    toggle.addEventListener('click', () => {
-      paused = !paused;
-      try { localStorage.setItem('vyra-motion-paused', String(paused)); } catch (_) {}
-      updatePreference();
-    });
-    document.body.append(progress, cursor, toggle);
+    document.body.append(progress, cursor);
     updatePreference();
     media.addEventListener('change', updatePreference);
     document.addEventListener('visibilitychange', () => {
@@ -46,12 +36,6 @@
 
   function updatePreference() {
     document.documentElement.classList.toggle('vx-paused', reduced());
-    const toggle = select('.vx-motion-toggle');
-    if (toggle) {
-      toggle.setAttribute('aria-pressed', String(paused));
-      toggle.setAttribute('aria-label', paused ? 'Ativar animações' : 'Pausar animações');
-      select('.vx-motion-label', toggle).textContent = paused ? 'MOVIMENTO PAUSADO' : 'MOVIMENTO ATIVO';
-    }
     engine?.preferenceChanged();
   }
 
@@ -152,7 +136,7 @@
       atmosphere.setAttribute('aria-hidden', 'true');
       atmosphere.innerHTML = '<div class="vx-orbit"></div><div class="vx-beam"></div><canvas class="vx-starfield"></canvas>';
       this.hero.prepend(atmosphere);
-      this.hero.insertAdjacentHTML('beforeend', '<div class="vx-hero-line" aria-hidden="true"></div><div class="vx-coordinate" aria-hidden="true"><span>FLIX ORIGINAL EXPERIENCE</span><strong>01 — ∞</strong></div><div class="vx-orbital-label" aria-hidden="true">ALÉM DO SEU UNIVERSO</div><div class="vx-explore-cue" aria-hidden="true"><i class="vx-mouse"></i><span>EXPLORE. SINTA. DÊ PLAY.</span></div>');
+      this.hero.insertAdjacentHTML('beforeend', '<div class="vx-hero-line" aria-hidden="true"></div><div class="vx-coordinate" aria-hidden="true"><span>WORKTV ORIGINAL EXPERIENCE</span><strong>01 — ∞</strong></div><div class="vx-orbital-label" aria-hidden="true">ALÉM DO SEU UNIVERSO</div><div class="vx-explore-cue" aria-hidden="true"><i class="vx-mouse"></i><span>EXPLORE. SINTA. DÊ PLAY.</span></div>');
       this.canvas = select('canvas', atmosphere);
       this.ctx = this.canvas.getContext('2d', { alpha: true });
       this.particles = Array.from({ length: innerWidth < 650 ? 54 : 140 }, (_, i) => ({
@@ -539,9 +523,9 @@
       if (index === this.sceneIndex) return;
       this.sceneIndex = index;
       const themes = [
-        { color: '#f43e58', text: 'Explorar filmes', href: '/filmes' },
-        { color: '#a272ef', text: 'Encontrar minha próxima série', href: '/series' },
-        { color: '#e65067', text: 'Descobrir a TV ao vivo', href: '/tv' }
+        { color: '#1688ef', text: 'Explorar filmes', href: '/filmes' },
+        { color: '#39c4ed', text: 'Encontrar minha próxima série', href: '/series' },
+        { color: '#247cda', text: 'Descobrir a TV ao vivo', href: '/tv' }
       ];
       const theme = themes[index];
       this.story.style.setProperty('--vx-stage-accent', theme.color);
@@ -605,15 +589,15 @@
           const push = (1 - distance / 160) * 20 * p.z;
           x += dx / distance * push; y += dy / distance * push;
           if (connections++ < 12 && distance < 105) {
-            ctx.strokeStyle = `rgba(255,115,137,${(.12 * (1 - distance / 105)).toFixed(3)})`;
+            ctx.strokeStyle = `rgba(83,169,255,${(.12 * (1 - distance / 105)).toFixed(3)})`;
             ctx.lineWidth = .6; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(px, py); ctx.stroke();
           }
         }
         const twinkle = .35 + .45 * (Math.sin(now * .0007 + p.phase) * .5 + .5);
-        ctx.fillStyle = p.red ? `rgba(255,94,120,${twinkle * p.z})` : `rgba(255,227,211,${twinkle * p.z * .7})`;
+        ctx.fillStyle = p.red ? `rgba(55,158,255,${twinkle * p.z})` : `rgba(201,233,255,${twinkle * p.z * .7})`;
         ctx.beginPath(); ctx.arc(x, y, p.radius * p.z, 0, Math.PI * 2); ctx.fill();
         if (p.red && p.z > .7) {
-          ctx.strokeStyle = `rgba(255,102,131,${twinkle * .15})`;
+          ctx.strokeStyle = `rgba(67,162,255,${twinkle * .15})`;
           ctx.lineWidth = .65; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x - this.pointer.sx * 4, y + 9 * p.z); ctx.stroke();
         }
       }
@@ -621,7 +605,7 @@
         const age = (now - this.touchPulse.start) / 1000;
         if (age > 1.8) this.touchPulse = null;
         else {
-          ctx.strokeStyle = `rgba(255,131,154,${.24 * (1-age/1.8)})`;
+          ctx.strokeStyle = `rgba(105,191,255,${.24 * (1-age/1.8)})`;
           ctx.lineWidth = 1;
           ctx.beginPath(); ctx.arc(this.touchPulse.x, this.touchPulse.y, age*240+5, 0, Math.PI*2); ctx.stroke();
         }

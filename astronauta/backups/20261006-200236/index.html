@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex,nofollow,noarchive">
+  <meta name="referrer" content="no-referrer">
+  <title>Astronauta · Apresentação 3D</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="./preview.css">
+  <script type="module" src="./preview.js"></script>
+</head>
+<body>
+<main>
+  <header><div class="brand"><span class="mark">✦</span> WORK <span class="divider">/</span> EXPLORADOR</div><span class="badge">PRÉVIA 3D</span></header>
+  <section class="intro"><p class="eyebrow">PERSONAGEM · VERSÃO 01</p><h1>Um pequeno explorador.<br><span>Pronto para se mover.</span></h1><p>Explore o astronauta em 360°, veja as animações e descubra seu esqueleto.</p></section>
+  <section class="stage" aria-label="Visualizador interativo do astronauta">
+    <div id="viewport" tabindex="0" aria-label="Modelo 3D. Arraste para girar e use a roda do mouse ou dois dedos para aproximar."></div>
+    <div class="stage-label"><span class="dot"></span><span id="status" role="status" aria-live="polite">Carregando astronauta…</span></div>
+    <div id="loading" class="loading"><span class="spinner"></span><p id="load-message">Preparando a missão…</p></div>
+    <div class="view-controls" aria-label="Vistas do modelo"><button data-view="front" aria-pressed="true">Frente</button><button data-view="side" aria-pressed="false">Lateral</button><button data-view="back" aria-pressed="false">Costas</button><button id="reset">↺ Recentrar</button></div>
+    <p class="hint">Arraste para girar · Use dois dedos ou a roda do mouse para zoom</p>
+  </section>
+  <section class="panel" aria-label="Controles de animação">
+    <div class="motion"><span class="control-label">MOVIMENTO</span><div class="buttons"><button data-animation="Float" aria-pressed="true" disabled>Flutuar</button><button data-animation="Wave" aria-pressed="false" disabled>Acenar</button><button data-animation="WalkInPlace" aria-pressed="false" disabled>Caminhar</button><button data-animation="pose" aria-pressed="false" disabled>Pose T</button></div></div>
+    <div class="extras"><button id="pause" disabled aria-pressed="false">Pausar</button><button id="skeleton" disabled aria-pressed="false">Ver esqueleto</button><label class="speed">Velocidade <select id="speed" disabled><option value="0.5">0,5×</option><option value="1" selected>1×</option><option value="1.5">1,5×</option></select></label></div>
+  </section>
+  <footer><p><strong>52 ossos</strong><span>·</span>Dedos articulados<span>·</span>3 animações</p><a href="./astronauta.glb" download="astronauta.glb">Baixar modelo GLB ↗</a></footer>
+  <p class="note">Protótipo baseado na referência. Formas e deformações ainda podem ser refinadas.</p>
+  <noscript>Ative o JavaScript para visualizar o modelo. Você também pode baixar o arquivo GLB pelo link acima.</noscript>
+</main>
+</body>
+</html>

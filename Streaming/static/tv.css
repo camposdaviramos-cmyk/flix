@@ -1,0 +1,86 @@
+/* TV is explicit/detected: resolution alone never changes a desktop into a TV. */
+.wt-tv body{font-size:clamp(18px,1.35vw,30px);padding-bottom:54px}
+.wt-tv{scroll-padding-top:140px;scroll-padding-bottom:80px}
+.wt-tv .container{width:90%;max-width:2600px}
+.wt-tv .header{background:#091426f5;position:sticky;top:0}
+.wt-tv .header-inner{height:auto;min-height:90px;display:flex;flex-wrap:wrap;gap:16px 30px;padding-block:14px}
+.wt-tv .header nav{display:flex!important;position:static;height:auto;background:none;border:0;padding:0;flex-direction:row;flex-wrap:wrap;gap:14px 22px;backdrop-filter:none}
+.wt-tv .header nav a{display:inline-flex!important;font-size:clamp(18px,1.25vw,28px);min-height:44px;align-items:center}
+.wt-tv .header-actions{margin-left:auto;flex-wrap:wrap;gap:20px}
+.wt-tv .mobile-toggle{display:none}
+.wt-tv .brand{font-size:clamp(30px,2.4vw,50px)}
+.wt-tv .brand .brand-mark{width:40px!important;height:40px!important}
+.wt-tv a,.wt-tv button,.wt-tv input,.wt-tv select,.wt-tv textarea,.wt-tv summary{scroll-margin:145px 28px 85px}
+.wt-tv :focus{outline:4px solid #a1e8ff!important;outline-offset:5px!important;box-shadow:0 0 0 9px #1675df9c!important}
+.wt-tv .poster-button:focus .poster-hover{opacity:1}
+.wt-tv .poster-button:focus,.wt-tv .channel-card:focus{transform:scale(1.025);z-index:2}
+.wt-tv .btn,.wt-tv .text-button,.wt-tv .pill,.wt-tv .field input,.wt-tv .field select,.wt-tv .field textarea,.wt-tv .search-box input{font-size:clamp(18px,1.25vw,28px);min-height:48px}
+.wt-tv .icon-btn{min-width:48px;min-height:48px}
+.wt-tv .page{padding-top:46px;min-height:65vh}
+.wt-tv .page-heading h1{font-size:clamp(32px,3vw,64px)}
+.wt-tv .page-heading p,.wt-tv .notice,.wt-tv .card-meta,.wt-tv .card-info h3,.wt-tv .field label,.wt-tv .player-head p,.wt-tv .player-footer,.wt-tv .detail-body p,.wt-tv .footer-links,.wt-tv .footer-bottom{font-size:clamp(17px,1.2vw,27px);line-height:1.6}
+.wt-tv .catalog-toolbar{gap:24px;flex-wrap:wrap}
+.wt-tv .category-pills{gap:14px;padding:12px 8px;max-width:100%;overflow:auto}
+.wt-tv .search-box{min-width:280px;max-width:100%}
+.wt-tv .catalog-grid{grid-template-columns:repeat(5,minmax(0,1fr));gap:32px;padding:12px}
+.wt-tv .channels-grid{grid-template-columns:repeat(4,minmax(0,1fr))}
+.wt-tv .poster-row,.wt-tv .member-row{grid-auto-columns:calc((100% - 128px)/5);gap:32px;padding:12px 12px 24px;scroll-padding:12px}
+.wt-tv .resume-row{grid-auto-columns:calc((100% - 64px)/3)}
+.wt-tv .card-info{margin-top:16px}.wt-tv .card-info h3{white-space:normal}
+.wt-tv .poster-title{font-size:clamp(22px,2vw,44px)}
+.wt-tv .wt-hero,.wt-tv.vx-enabled .wt-hero{padding:65px 6% 100px;min-height:650px}
+.wt-tv .wt-hero h1{font-size:clamp(42px,5vw,90px)}
+.wt-tv .wt-hero .hero-description{font-size:clamp(19px,1.5vw,32px)}
+.wt-tv .wt-hero>.wt-astro{transform:translateX(20px)}
+.wt-tv .wt-astro-touch{height:clamp(330px,32vw,560px)}
+.wt-tv #wt-astro-hint{font-size:16px}
+.wt-tv .member-hero-content{padding-top:65px}.wt-tv .member-hero h1{max-width:1100px}
+.wt-tv .member-row-arrow{opacity:1}
+.wt-tv dialog{max-width:80vw;max-height:85vh;scroll-padding:24px 0 90px}
+.wt-tv .auth-modal{max-width:650px}
+.wt-tv .modal-body,.wt-tv .detail-body{padding:42px}
+.wt-tv .modal-close{position:sticky;float:right;top:18px;margin:18px;z-index:10}
+.wt-tv .modal-heading p,.wt-tv .auth-switch,.wt-tv .auth-terms{font-size:18px}
+.wt-tv .player-modal{width:90vw;max-width:90vw;max-height:88vh}
+.wt-tv .player-head{padding:18px 30px}
+.wt-tv .video-wrap video{max-height:55vh;width:100%;background:#000}
+.wt-tv .player-modal:fullscreen{width:100%;max-width:none;height:100%;max-height:none;overflow:auto;border:0;border-radius:0;background:#000}
+.wt-tv .player-modal:fullscreen .video-wrap video{max-height:70vh}
+.wt-tv-player-controls{display:flex;flex-wrap:wrap;align-items:center;gap:18px;padding:22px 30px;background:#0e1a2c}
+.wt-tv-player-controls button{background:#173957;border:1px solid #6898b8;border-radius:8px;color:white;padding:12px 20px;font:inherit;min-height:50px;cursor:pointer}
+.wt-tv-player-controls button:disabled{opacity:.4}.wt-tv-time{font-variant-numeric:tabular-nums;font-size:20px}
+.wt-tv-hint{position:fixed;bottom:0;left:0;right:0;margin:0;padding:12px 5%;background:#081423f5;color:#c6e6ff;font-size:16px;text-align:right;pointer-events:none;z-index:20}
+.wt-tv .vx-cursor,.wt-tv .vx-progress{display:none}
+.wt-tv .vx-story-pin{position:relative!important;top:auto!important}
+.wt-tv .vx-story{min-height:0!important;height:auto!important}
+.wt-tv .vx-pending,.wt-tv .reveal{opacity:1!important;transform:none!important}
+.wt-tv .fh-launcher{bottom:65px}
+.wt-connection{position:fixed;top:0;left:0;right:0;background:#173957;color:#fff;z-index:1000;text-align:center;padding:12px;font:16px/1.5 system-ui}
+.wt-install-help{font-size:18px;line-height:1.8}
+@media(max-width:1100px){.wt-tv .catalog-grid{grid-template-columns:repeat(4,minmax(0,1fr))}.wt-tv .poster-row,.wt-tv .member-row{grid-auto-columns:calc((100% - 96px)/4)}.wt-tv .header-inner{gap:12px}.wt-tv .header nav{gap:12px}.wt-tv .header-actions{margin-left:0}.wt-tv .channels-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.wt-tv .wt-hero,.wt-tv.vx-enabled .wt-hero{padding-top:40px}}
+@media(max-width:700px){.wt-tv .catalog-grid,.wt-tv .channels-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:20px}.wt-tv .poster-row,.wt-tv .member-row{grid-auto-columns:calc((100% - 20px)/2);gap:20px}.wt-tv .header-inner{width:92%}.wt-tv .header nav a{font-size:16px}.wt-tv dialog{max-width:94vw}.wt-tv .modal-body,.wt-tv .detail-body{padding:22px}.wt-tv-hint{font-size:12px}.wt-tv .wt-hero,.wt-tv.vx-enabled .wt-hero{grid-template-columns:1fr}.wt-tv .wt-astro{max-width:300px}}
+
+.wt-tv.vx-scrolled .header{height:auto}.wt-tv .detail-cover{max-height:38vh;overflow:hidden}.wt-tv .detail-cover img{width:100%;height:100%;object-fit:cover}
+/* Reserve actual header height and keep remote transport inside shorter TV screens. */
+.wt-tv .header{height:auto}
+.wt-tv .header nav{order:3;flex-basis:100%}
+.wt-tv .header-actions{justify-content:flex-end;flex:1}
+.wt-tv .header nav a.active:after{bottom:0}
+.wt-tv,.wt-tv a,.wt-tv button,.wt-tv input,.wt-tv select{scroll-behavior:auto}
+.wt-tv a,.wt-tv button,.wt-tv input,.wt-tv select,.wt-tv textarea,.wt-tv summary{scroll-margin-top:calc(var(--wt-tv-header,150px) + 20px)}
+.wt-tv #fh-dock{bottom:64px}
+.wt-tv #modal.player-modal{width:92vw;max-width:92vw;max-height:92vh}
+.wt-tv .player-modal .video-wrap{height:calc(92vh - 250px);max-height:65vh;min-height:160px;aspect-ratio:auto}
+.wt-tv .player-modal .video-wrap video{height:100%;max-height:100%}
+.wt-tv .player-modal .fj-controls{display:none}
+.wt-tv .player-modal .fj-top{padding:14px 24px;pointer-events:none}
+.wt-tv #modal.player-modal:fullscreen{width:100vw;max-width:100vw;max-height:100vh;height:100vh}
+.wt-tv #modal.player-modal:fullscreen .video-wrap{height:calc(100vh - 220px);max-height:none}
+.wt-tv .wt-tv-player-controls{gap:12px;padding:16px 24px}
+.wt-tv .wt-tv-player-controls button{padding:10px 16px}
+@media(min-width:1800px){.wt-tv .header nav{order:0;flex-basis:auto}.wt-tv .header-actions{flex:0 1 auto}}
+
+.wt-tv #fh-dock{display:none}.wt-tv.vx-enabled.vx-scrolled .header nav a.active:after{bottom:0}
+@supports not (aspect-ratio:1){.wt-tv .poster-button{height:27vw}.wt-tv .poster-button>img{position:absolute;inset:0}.wt-tv .poster-row .poster-button{height:29vw}}
+
+.wt-tv-player-stage:fullscreen{width:100vw;height:100vh;background:#070e1c;overflow:auto;padding:0 3vw}.wt-tv .wt-tv-player-stage:fullscreen .video-wrap{height:calc(100vh - 220px);max-height:none}.wt-tv .wt-tv-player-stage:fullscreen .video-wrap video{max-height:100%}

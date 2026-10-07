@@ -35,7 +35,7 @@ def ensure_room_tracks(db,r):
     for q in rows:
         if q['track_id'] or q['media_type'] not in ('audio','soundcloud'):continue
         tid='legacy_'+hashlib.sha256(q['url'].encode()).hexdigest()[:24]
-        db.execute('INSERT OR IGNORE INTO music_tracks(id,provider,title,artist,url,created_at,updated_at) VALUES(?,?,?,?,?,?,?)',(tid,'soundcloud' if q['media_type']=='soundcloud' else 'upload' if q['url'].startswith('/api/community/assets/') else 'link',q['title'],'Comunidade Flix',q['url'],time.time(),time.time()))
+        db.execute('INSERT OR IGNORE INTO music_tracks(id,provider,title,artist,url,created_at,updated_at) VALUES(?,?,?,?,?,?,?)',(tid,'soundcloud' if q['media_type']=='soundcloud' else 'upload' if q['url'].startswith('/api/community/assets/') else 'link',q['title'],'Comunidade WorkTV',q['url'],time.time(),time.time()))
         tid=db.execute('SELECT id FROM music_tracks WHERE url=?',(q['url'],)).fetchone()[0]
         db.execute('UPDATE community_queue SET track_id=?,added_by=COALESCE(added_by,?) WHERE id=?',(tid,r['host_id'],q['id']))
     if not r['music_current']:

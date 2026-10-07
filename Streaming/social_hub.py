@@ -34,13 +34,17 @@ def migrate(db):
     now="CAST(strftime('%s','now') AS REAL)"
     def trigger(name,table,event,select,condition='1'):
         db.execute(f'CREATE TRIGGER IF NOT EXISTS hub_{name} AFTER {event} ON {table} WHEN {condition} BEGIN INSERT OR IGNORE INTO hub_notifications(user_id,actor_id,category,title,body,href,created_at,dedupe) {select}; END')
+    for name in ('hub_jump_request', 'hub_jump_decision', 'hub_jump_host'):
+        legacy = db.execute("SELECT sql FROM sqlite_master WHERE type='trigger' AND name=?", (name,)).fetchone()
+        if legacy and 'FlixJump' in legacy[0]:
+            db.execute(f'DROP TRIGGER {name}')
     actor="COALESCE((SELECT name FROM users WHERE id=NEW.user_id),'Alguém')"
     trigger('friend_request','jump_friends','INSERT',f"SELECT NEW.recipient,NEW.sender,'social','Pedido de amizade',(SELECT name FROM users WHERE id=NEW.sender)||' quer adicionar você.','/comunidade?tab=friends',{now},'friend:'||NEW.sender||':'||NEW.created_at", "NEW.status='pending'")
     trigger('friend_accept','jump_friends','UPDATE',f"SELECT NEW.sender,NEW.recipient,'social','Amizade aceita',(SELECT name FROM users WHERE id=NEW.recipient)||' aceitou seu pedido.','/comunidade?tab=friends&dm='||NEW.recipient,{now},'friend-accepted:'||NEW.recipient||':'||NEW.created_at", "NEW.status='accepted' AND OLD.status!='accepted'")
     trigger('jump_invite','jump_invites','INSERT',f"SELECT NEW.user_id,r.host_id,'rooms','Convite para assistir',c.title,'/sala/'||r.id,{now},'jump-invite:'||r.id FROM jump_rooms r JOIN content c ON c.id=r.content_id WHERE r.id=NEW.room_id")
-    trigger('jump_request','jump_requests','INSERT',f"SELECT r.host_id,NEW.user_id,'rooms','Pedido para entrar no FlixJump',{actor}||' quer assistir com você.','/sala/'||r.id,{now},'jump-request:'||r.id||':'||NEW.user_id||':'||NEW.created_at FROM jump_rooms r WHERE r.id=NEW.room_id", "NEW.status='pending'")
-    trigger('jump_decision','jump_requests','UPDATE',f"SELECT NEW.user_id,r.host_id,'rooms',CASE WHEN NEW.status='approved' THEN 'Entrada no FlixJump aceita' ELSE 'Pedido recusado' END,c.title,'/sala/'||r.id,{now},'jump-decision:'||r.id||':'||NEW.created_at FROM jump_rooms r JOIN content c ON c.id=r.content_id WHERE r.id=NEW.room_id", "NEW.status IN ('approved','rejected') AND OLD.status='pending'")
-    trigger('jump_host','jump_rooms','UPDATE',f"SELECT NEW.host_id,OLD.host_id,'rooms','Você é o anfitrião do FlixJump','Os controles do player estão com você.','/sala/'||NEW.id,{now},'jump-host:'||NEW.id||':'||NEW.revision", "NEW.host_id!=OLD.host_id")
+    trigger('jump_request','jump_requests','INSERT',f"SELECT r.host_id,NEW.user_id,'rooms','Pedido para entrar no WorkTV Juntos',{actor}||' quer assistir com você.','/sala/'||r.id,{now},'jump-request:'||r.id||':'||NEW.user_id||':'||NEW.created_at FROM jump_rooms r WHERE r.id=NEW.room_id", "NEW.status='pending'")
+    trigger('jump_decision','jump_requests','UPDATE',f"SELECT NEW.user_id,r.host_id,'rooms',CASE WHEN NEW.status='approved' THEN 'Entrada no WorkTV Juntos aceita' ELSE 'Pedido recusado' END,c.title,'/sala/'||r.id,{now},'jump-decision:'||r.id||':'||NEW.created_at FROM jump_rooms r JOIN content c ON c.id=r.content_id WHERE r.id=NEW.room_id", "NEW.status IN ('approved','rejected') AND OLD.status='pending'")
+    trigger('jump_host','jump_rooms','UPDATE',f"SELECT NEW.host_id,OLD.host_id,'rooms','Você é o anfitrião do WorkTV Juntos','Os controles do player estão com você.','/sala/'||NEW.id,{now},'jump-host:'||NEW.id||':'||NEW.revision", "NEW.host_id!=OLD.host_id")
     trigger('dm','community_dm','INSERT',f"SELECT NEW.recipient,NEW.sender,'messages','Nova mensagem',(SELECT name FROM users WHERE id=NEW.sender)||' enviou uma mensagem.','/comunidade?tab=friends&dm='||NEW.sender,NEW.created_at,'dm:'||NEW.id")
     db.executescript('''CREATE TRIGGER IF NOT EXISTS hub_streak AFTER INSERT ON community_dm BEGIN
       INSERT INTO hub_streak_days(first_id,second_id,day,first_sent,second_sent) VALUES(MIN(NEW.sender,NEW.recipient),MAX(NEW.sender,NEW.recipient),date(NEW.created_at,'unixepoch','-3 hours'),NEW.sender<NEW.recipient,NEW.sender>NEW.recipient)
@@ -368,4 +372,4 @@ def register(app,db,auth,data,error):
     def hub_test_push():
         if not db().execute('SELECT 1 FROM hub_push WHERE user_id=?',(uid(),)).fetchone():raise error('Ative as notificações neste dispositivo primeiro.')
         if db().execute("SELECT COUNT(*) FROM hub_notifications WHERE user_id=? AND dedupe LIKE 'push-test:%' AND created_at>?",(uid(),time.time()-60)).fetchone()[0]>=3:raise error('Aguarde antes de testar novamente.',429)
-        db().execute("INSERT INTO hub_notifications(user_id,category,title,body,href,created_at,dedupe) VALUES(?,'account','Flix está com você','As notificações deste dispositivo estão prontas.','/comunidade',?,?)",(uid(),time.time(),'push-test:'+secrets.token_hex(8)));db().commit();return jsonify(ok=True)
+        db().execute("INSERT INTO hub_notifications(user_id,category,title,body,href,created_at,dedupe) VALUES(?,'account','WorkTV está com você','As notificações deste dispositivo estão prontas.','/comunidade',?,?)",(uid(),time.time(),'push-test:'+secrets.token_hex(8)));db().commit();return jsonify(ok=True)

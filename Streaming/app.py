@@ -93,7 +93,7 @@ def create_app(data_dir=None, testing=False):
                 if c['kind'] == 'series':
                     for n, title in enumerate(['O começo de tudo', 'Além das aparências', 'Um novo caminho'], 1):
                         db().execute('INSERT INTO episodes VALUES(?,?,?,?,?,?,?)', (uuid.uuid4().hex,c['id'],1,n,title,SAMPLE,'14min'))
-            db().execute('INSERT INTO settings VALUES(?,?)', ('brand','Flix'))
+            db().execute('INSERT INTO settings VALUES(?,?)', ('brand','WorkTV'))
             db().execute('INSERT INTO settings VALUES(?,?)', ('mode','test'))
         if not db().execute("SELECT 1 FROM users WHERE role='admin'").fetchone():
             password = secrets.token_urlsafe(15)
@@ -110,7 +110,7 @@ def create_app(data_dir=None, testing=False):
         migrate_jump(db())
         migrate_coupons(db())
         migrate_community(db())
-        db().execute("UPDATE settings SET value='Flix' WHERE key='brand' AND UPPER(value)='VYRA'")
+        db().execute("UPDATE settings SET value='WorkTV' WHERE key='brand' AND UPPER(value) IN ('VYRA','FLIX')")
         db().commit()
 
     @app.before_request
@@ -219,7 +219,7 @@ def create_app(data_dir=None, testing=False):
         plans=[dict(p) for p in db().execute('SELECT * FROM plans WHERE active=1 ORDER BY price')]
         for p in plans:
             p['features']=json.loads(p['features'])
-        return jsonify(brand=setting('brand','Flix'),plans=plans,user=public_user(g.user),checkout_ready=bool(setting('access_token') and setting('webhook_secret') and setting('public_url')),support_email=setting('support_email',''))
+        return jsonify(brand=setting('brand','WorkTV'),plans=plans,user=public_user(g.user),checkout_ready=bool(setting('access_token') and setting('webhook_secret') and setting('public_url')),support_email=setting('support_email',''))
 
     @app.post('/api/auth/register')
     def register():
@@ -391,7 +391,7 @@ def create_app(data_dir=None, testing=False):
         oid=uuid.uuid4().hex
         db().execute('INSERT INTO orders(id,user_id,plan_id,amount,days,kind,coins,label,created_at) VALUES(?,?,?,?,?,?,?,?,?)',(oid,g.user['id'],plan_id,amount,days,kind,coins,label,time.time()))
         db().commit()
-        pref=mp_request('/checkout/preferences',{'items':[{'id':item_id,'title':f"{setting('brand','Flix')} · {label}",'quantity':1,'currency_id':'BRL','unit_price':amount/100}],'payer':{'email':g.user['email']},'external_reference':oid,'back_urls':{s:base+back+'?payment='+s+'&order='+oid for s in ('success','failure','pending')},'notification_url':base+'/api/payments/webhook','auto_return':'approved','metadata':{'order_id':oid}},oid)
+        pref=mp_request('/checkout/preferences',{'items':[{'id':item_id,'title':f"{setting('brand','WorkTV')} · {label}",'quantity':1,'currency_id':'BRL','unit_price':amount/100}],'payer':{'email':g.user['email']},'external_reference':oid,'back_urls':{s:base+back+'?payment='+s+'&order='+oid for s in ('success','failure','pending')},'notification_url':base+'/api/payments/webhook','auto_return':'approved','metadata':{'order_id':oid}},oid)
         db().execute('UPDATE orders SET preference_id=? WHERE id=?',(pref['id'],oid))
         db().commit()
         target=pref.get('sandbox_init_point') if setting('mode','test')=='test' else pref.get('init_point')

@@ -100,12 +100,12 @@ def run():
         checks.append('Interactive device scene changes focus with synchronized preview timelines')
         print('Interactive desktop scenes passed', flush=True)
 
-        page.get_by_role('button', name='Pausar animações', exact=True).click()
+        page.emulate_media(reduced_motion='reduce')
         page.wait_for_timeout(250)
         assert page.evaluate('window.VyraMotion.getStatus().paused')
         assert page.locator('.vx-ticker-track').evaluate('(e)=>getComputedStyle(e).animationPlayState') == 'paused'
         assert page.locator('.vx-story-pin').evaluate('(e)=>getComputedStyle(e).position') == 'relative'
-        page.get_by_role('button', name='Ativar animações', exact=True).click()
+        page.emulate_media(reduced_motion='no-preference')
         page.wait_for_timeout(350)
         assert not page.evaluate('window.VyraMotion.getStatus().paused')
         page.emulate_media(reduced_motion='reduce')
@@ -114,7 +114,7 @@ def run():
         assert page.locator('.vx-story-pin').evaluate('(e)=>getComputedStyle(e).position') == 'relative'
         assert page.locator('.vx-pending').count() == 0
         page.emulate_media(reduced_motion='no-preference')
-        checks.append('User pause and live OS reduced-motion preference leave all content accessible')
+        checks.append('Live OS reduced-motion preference leaves all content accessible')
         print('Pause and reduced motion passed', flush=True)
 
         # Route changes run through the actual SPA, including cleanup of observers/listeners.
@@ -122,7 +122,7 @@ def run():
             page.evaluate('(url)=>navigate(url)', route)
             page.wait_for_timeout(1600)
             assert page.evaluate('window.VyraMotion.getStatus().mounted')
-            assert page.locator('.vx-motion-toggle').count() == 1
+            assert page.locator('.vx-motion-toggle').count() == 0
             page.wait_for_function('() => document.querySelectorAll(".vx-transition").length === 0',timeout=6000)
         assert page.locator('.vx-starfield').count() == 1
         assert page.locator('.vx-story').count() == 1

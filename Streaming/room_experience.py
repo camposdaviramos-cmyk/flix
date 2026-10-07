@@ -151,7 +151,7 @@ def register(app,db,auth,data,error,room,content_url):
         if lane=='music':
             tid='room_'+hashlib.sha256(url.encode()).hexdigest()[:24]
             provider='youtube' if typ=='youtube' else 'soundcloud' if typ=='soundcloud' else 'upload' if url.startswith('/api/community/assets/') else 'link'
-            db().execute('INSERT OR IGNORE INTO music_tracks(id,provider,title,artist,url,created_at,updated_at) VALUES(?,?,?,?,?,?,?)',(tid,provider,title,'Comunidade Flix',url,time.time(),time.time()))
+            db().execute('INSERT OR IGNORE INTO music_tracks(id,provider,title,artist,url,created_at,updated_at) VALUES(?,?,?,?,?,?,?)',(tid,provider,title,'Comunidade WorkTV',url,time.time(),time.time()))
             tid=db().execute('SELECT id FROM music_tracks WHERE url=?',(url,)).fetchone()[0]
             item=db().execute('INSERT INTO room_audio_queue(room_id,user_id,title,url,media_type,created_at,track_id) VALUES(?,?,?,?,?,?,?)',(rid,uid(),title,url,typ,time.time(),tid)).lastrowid
             if start:

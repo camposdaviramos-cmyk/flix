@@ -3,7 +3,8 @@
 window.VyraMedia = (() => {
   function nativeHls(video) {
     const apple = /Apple/.test(navigator.vendor || '') || /iPad|iPhone|iPod/.test(navigator.userAgent || '') || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-    return apple && !!video.canPlayType('application/vnd.apple.mpegurl');
+    const tv = !!window.WorkTVPlatform?.television || /SmartTV|Smart-TV|Tizen|Web0S|WebOS|Android TV|AFT[A-Z0-9]/i.test(navigator.userAgent || '');
+    return (apple || tv) && !!video.canPlayType('application/vnd.apple.mpegurl');
   }
   function failure(data, nativeError) {
     const code=Number(data?.response?.code || data?.networkDetails?.status || 0);

@@ -127,7 +127,7 @@ class HubTests(unittest.TestCase):
         self.assertEqual(self.db.execute('SELECT COUNT(*) FROM hub_push').fetchone()[0],0)
 
     def test_pwa_and_brand(self):
-        self.assertEqual(self.a.get('/api/bootstrap').json['brand'],'Flix');r=self.a.get('/manifest.webmanifest');self.assertEqual(r.status_code,200);self.assertEqual(r.json['display'],'standalone');r.close()
+        self.assertEqual(self.a.get('/api/bootstrap').json['brand'],'WorkTV');r=self.a.get('/manifest.webmanifest');self.assertEqual(r.status_code,200);self.assertEqual(r.json['display'],'standalone');r.close()
         r=self.a.get('/sw.js');self.assertEqual(r.status_code,200);self.assertEqual(r.headers['Service-Worker-Allowed'],'/');self.assertIn("u.pathname.startsWith('/api/')",r.text);r.close()
 
 if __name__=='__main__':unittest.main()
