@@ -38,7 +38,7 @@ window.FlixHub=(()=>{
       if(Date.now()-presenceAt>20000&&!document.hidden){presenceAt=Date.now();await api('/community/presence',{method:'POST',body:{}});}
       if(!call){const d=await A('/calls');if(user===who&&d.calls.length)receiveCall(d.calls[0]);}
     }catch(e){if(e.status===401){reset();return;}}
-    finally{if(user===who){busy=false;timer=setTimeout(poll,call?3000:4000);}}
+    finally{if(user===who){busy=false;timer=setTimeout(poll,call?3000:document.hidden?20000:(inline||open||!panel.hidden)?4000:10000);}}
   }
   function badge(){const count=friends.reduce((n,u)=>n+u.unread,0);for(const el of $$('[data-fh-unread]')){el.hidden=!count;el.textContent=count>99?'99+':count;}for(const el of $$('[data-fh-notices]')){el.hidden=!unread;el.textContent=unread>99?'99+':unread;}if(navigator.setAppBadge){if(unread)navigator.setAppBadge(unread).catch(()=>{});else navigator.clearAppBadge?.().catch(()=>{});}}
   function paintFriends(){if(!pane)return;const q=$('#fh-search',pane).value.toLowerCase(),list=$('#fh-friends',pane);const html=friends.filter(u=>(u.name+' '+u.username).toLowerCase().includes(q)).map(u=>`<button class="fh-friend ${u.id===current?'selected':''}" data-hub="dm" data-id="${u.id}"><span class="fh-avatar ${u.online?'online':''}">${C().avatar(u)}</span><span><strong>${esc(u.name)} ${window.FlixSpaces?.verified(u)||''} ${u.streak.days?`<i class="fh-flame" title="${u.streak.days} dias de conversa">🔥 ${u.streak.days}</i>`:''}</strong><small>${u.typing?'Digitando…':esc((u.last_message||u.status_text||'Diga um oi').slice(0,60))}</small></span>${u.unread?`<b>${u.unread}</b>`:''}</button>`).join('')||'<p class="fh-empty">Adicione amigos pelo nome de usuário para conversar.</p>';if(list.innerHTML!==html)list.innerHTML=html;}

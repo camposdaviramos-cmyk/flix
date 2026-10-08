@@ -23,6 +23,8 @@ from werkzeug.exceptions import HTTPException
 from media import valid_url, fetch_playlist, parse_playlist
 from playback_diagnostics import register_playback_diagnostics, automatic_diagnostics
 from seed import catalog, SAMPLE
+from public_cache import PublicCatalogCache
+from proxy_security import LocalProxyHeaders
 import flix_wallet
 from community import migrate as migrate_community, register_community
 from jump import migrate as migrate_jump, register_jump, username_for
@@ -45,6 +47,7 @@ CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY,value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS orders(id TEXT PRIMARY KEY,user_id TEXT REFERENCES users(id),plan_id TEXT,amount INTEGER,days INTEGER,status TEXT DEFAULT 'pending',payment_id TEXT UNIQUE,preference_id TEXT,created_at REAL NOT NULL,paid_at REAL,expires_at REAL);
 CREATE TABLE IF NOT EXISTS attempts(ip TEXT,time REAL);
 CREATE INDEX IF NOT EXISTS idx_attempts ON attempts(ip,time);
+CREATE INDEX IF NOT EXISTS idx_attempts_time ON attempts(time);
 '''
 
 class APIError(Exception):
@@ -53,6 +56,12 @@ class APIError(Exception):
 
 def create_app(data_dir=None, testing=False):
     app = Flask(__name__, static_folder='static')
+    app.wsgi_app = LocalProxyHeaders(app.wsgi_app)
+    catalog_cache = PublicCatalogCache()
+    dummy_password_hash = generate_password_hash(secrets.token_urlsafe(32))
+    app.extensions['public_catalog_cache'] = catalog_cache
+    if not testing:
+        app.config['TRUSTED_HOSTS'] = ['flix.devspacey.com','localhost','127.0.0.1']
     folder = Path(data_dir or os.getenv('VYRA_DATA_DIR', ROOT / 'data'))
     folder.mkdir(parents=True, exist_ok=True)
     keyfile = folder / 'secret.key'
@@ -119,9 +128,11 @@ def create_app(data_dir=None, testing=False):
             request.max_content_length=26*1024*1024
         g.user = None
         token = request.cookies.get('vyra_session', '')
-        if token:
+        if token and request.path not in ('/api/catalog','/api/seo','/sitemap.xml','/robots.txt'):
             g.user = db().execute("SELECT u.* FROM users u JOIN sessions s ON u.id=s.user_id WHERE s.token=? AND s.expires_at>? AND u.status='active'", (hashlib.sha256(token.encode()).hexdigest(),time.time())).fetchone()
         if request.path.startswith('/api/') and request.method not in ('GET','HEAD','OPTIONS') and request.path != '/api/payments/webhook':
+            if request.headers.get('Sec-Fetch-Site') == 'cross-site':
+                raise APIError('Origem da solicitação não permitida.',403)
             origin = request.headers.get('Origin')
             if origin and origin != request.host_url.rstrip('/') and origin != setting('public_url'):
                 raise APIError('Origem da solicitação não permitida.',403)
@@ -130,6 +141,12 @@ def create_app(data_dir=None, testing=False):
 
     @app.after_request
     def headers(response):
+        if response.status_code == 429 and request.path.startswith('/api/auth/'):
+            response.headers['Retry-After'] = '900'
+        if request.is_secure:
+            response.headers['Strict-Transport-Security'] = 'max-age=31536000'
+        if request.path.startswith('/api/admin/') and request.method not in ('GET','HEAD','OPTIONS') and response.status_code < 400:
+            catalog_cache.invalidate()
         response.headers['X-Content-Type-Options'] = 'nosniff'
         response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
         response.headers['X-Frame-Options'] = 'DENY'
@@ -201,18 +218,27 @@ def create_app(data_dir=None, testing=False):
         db().execute('INSERT INTO sessions VALUES(?,?,?)',(hashlib.sha256(token.encode()).hexdigest(),user['id'],time.time()+30*86400))
         db().commit()
         response = jsonify(user=public_user(user), **extra)
-        response.set_cookie('vyra_session',token,httponly=True,secure=setting('public_url').startswith('https://'),samesite='Lax',max_age=30*86400)
+        response.set_cookie('vyra_session',token,httponly=True,secure=request.is_secure or setting('public_url').startswith('https://'),samesite='Lax',max_age=30*86400)
         return response
 
     def rate_limit():
-        ip = hashlib.sha256(request.remote_addr.encode()).hexdigest()
-        now=time.time()
-        db().execute('DELETE FROM attempts WHERE time<?',(now-900,))
-        count=db().execute('SELECT count(*) FROM attempts WHERE ip=?',(ip,)).fetchone()[0]
-        if count >= 15:
-            raise APIError('Muitas tentativas. Aguarde 15 minutos.',429)
-        db().execute('INSERT INTO attempts VALUES(?,?)',(ip,now))
-        db().commit()
+        raw = request.get_json(silent=True)
+        email = str(raw.get('email','')).strip().casefold()[:254] if isinstance(raw,dict) else ''
+        peer = request.remote_addr or 'unknown'
+        ip_key = hashlib.sha256(('ip:'+peer).encode()).hexdigest()
+        account_key = hashlib.sha256(('login:'+peer+':'+email).encode()).hexdigest()
+        now = time.time()
+        connection = db()
+        # Serialize check + increment; concurrent attempts must not all pass the same count.
+        connection.execute('BEGIN IMMEDIATE')
+        connection.execute('DELETE FROM attempts WHERE time<?',(now-900,))
+        for key,limit in ((ip_key,300),(account_key,15)):
+            count = connection.execute('SELECT count(*) FROM attempts WHERE ip=?',(key,)).fetchone()[0]
+            if count >= limit:
+                connection.rollback()
+                raise APIError('Muitas tentativas. Aguarde 15 minutos.',429)
+        connection.executemany('INSERT INTO attempts VALUES(?,?)',[(ip_key,now),(account_key,now)])
+        connection.commit()
 
     @app.get('/api/bootstrap')
     def bootstrap():
@@ -262,7 +288,9 @@ def create_app(data_dir=None, testing=False):
         rate_limit()
         d=data()
         user=db().execute('SELECT * FROM users WHERE email=?',(str(d.get('email','')).strip().lower(),)).fetchone()
-        if not user or not check_password_hash(user['password'],str(d.get('password',''))) or user['status']!='active':
+        password = str(d.get('password',''))
+        valid_password = check_password_hash(user['password'] if user else dummy_password_hash, password[:129])
+        if not user or not valid_password or len(password)>128 or user['status']!='active':
             raise APIError('E-mail ou senha inválidos, ou conta bloqueada.',401)
         return session_response(user)
 
@@ -290,11 +318,17 @@ def create_app(data_dir=None, testing=False):
 
     @app.get('/api/catalog')
     def get_catalog():
-        items=[dict(row) for row in db().execute('SELECT c.*, (SELECT COUNT(*) FROM watch_history h WHERE h.content_id=c.id) AS viewers FROM content c WHERE c.published=1 ORDER BY c.featured DESC,c.created_at')]
-        for item in items:
-            item.pop('video_url',None)
-            item['episodes']=[dict(r) for r in db().execute('SELECT id,season,number,title,duration FROM episodes WHERE content_id=? ORDER BY season,number',(item['id'],))]
-        return jsonify(items=items)
+        def build():
+            items=[dict(row) for row in db().execute('SELECT c.*, (SELECT COUNT(*) FROM watch_history h WHERE h.content_id=c.id) AS viewers FROM content c WHERE c.published=1 ORDER BY c.featured DESC,c.created_at')]
+            episodes={}
+            for row in db().execute('SELECT e.content_id,e.id,e.season,e.number,e.title,e.duration FROM episodes e JOIN content c ON c.id=e.content_id WHERE c.published=1 ORDER BY e.content_id,e.season,e.number'):
+                episode=dict(row)
+                episodes.setdefault(episode.pop('content_id'),[]).append(episode)
+            for item in items:
+                item.pop('video_url',None)
+                item['episodes']=episodes.get(item['id'],[])
+            return app.json.dumps({'items':items},separators=(',',':')).encode('utf-8')
+        return Response(catalog_cache.get(build),content_type='application/json; charset=utf-8')
 
     @app.get('/api/library')
     @auth()
@@ -636,6 +670,13 @@ def create_app(data_dir=None, testing=False):
         merchant=mp_request('/users/me')
         return jsonify(ok=True,account=merchant.get('nickname','Conta conectada'))
 
+    @app.get('/api/seo')
+    def seo_metadata():
+        path=request.args.get('path','/').split('?',1)[0].lstrip('/')
+        if len(path)>512:
+            raise APIError('Caminho inválido.',400)
+        return jsonify(head=seo_head(metadata(db(),setting,path)))
+
     @app.get('/sitemap.xml')
     def sitemap_xml():
         return seo_sitemap(db(), setting)
@@ -654,7 +695,7 @@ def create_app(data_dir=None, testing=False):
         html = (ROOT / 'static' / 'index.html').read_text(encoding='utf-8')
         html = re.sub(r'<meta name="description"[^>]*>|<title>.*?</title>', '', html)
         html = html.replace('</head>', seo_head(meta) + '\n</head>')
-        html = re.sub(r'<div id="app">.*?</div></div>', lambda _: '<div id="app">' + seo_fallback(meta) + '</div>', html, count=1)
+        html = html.replace('<!--SEO_FALLBACK-->', '<noscript><style>#app{display:none}</style>' + seo_fallback(meta) + '</noscript>')
         response = Response(html, status=200 if meta['public'] or path in ('conta','carteira','lista','continuar','historico') or path.startswith('admin') or path=='comunidade' or re.fullmatch(r'comunidade/espaco/[a-zA-Z0-9_]{3,30}',path) or re.fullmatch(r'comunidade/criar(?:/(?:post|reel|story|movie|series))?',path) or re.fullmatch(r'comunidade/(?:perfil/[a-zA-Z0-9_]{3,24}|(?:sala|post)/[A-Za-z0-9_-]{12})',path) or re.fullmatch(r'sala/[A-Za-z0-9_-]{12}',path) else 404, content_type='text/html; charset=utf-8')
         response.headers['Cache-Control'] = 'no-cache'
         if not meta['public']:

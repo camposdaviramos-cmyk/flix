@@ -1,0 +1,333 @@
+{
+  "environment": "isolated localhost Chromium, software GPU; one cold visit, not real-device SLA",
+  "home_ms": 672,
+  "astro_ready_ms": 3403,
+  "resource_bytes": 5586152,
+  "js_bytes": 1000203,
+  "glb_bytes": 1337608,
+  "long_tasks": 15,
+  "blocking_ms": 6978,
+  "frame_p95_ms": 2066.6,
+  "errors": [],
+  "details": {
+    "profile": {
+      "longTasks": [
+        {
+          "start": 254.60000002384186,
+          "duration": 141
+        },
+        {
+          "start": 547.6000000238419,
+          "duration": 91
+        },
+        {
+          "start": 745.6000000238419,
+          "duration": 302
+        },
+        {
+          "start": 1095.3999999761581,
+          "duration": 366
+        },
+        {
+          "start": 1462.2000000476837,
+          "duration": 1917
+        },
+        {
+          "start": 3416.600000023842,
+          "duration": 520
+        },
+        {
+          "start": 3957,
+          "duration": 498
+        },
+        {
+          "start": 4607.200000047684,
+          "duration": 475
+        },
+        {
+          "start": 5145.200000047684,
+          "duration": 484
+        },
+        {
+          "start": 5667.200000047684,
+          "duration": 465
+        },
+        {
+          "start": 6202.800000071526,
+          "duration": 473
+        },
+        {
+          "start": 6742.600000023842,
+          "duration": 493
+        },
+        {
+          "start": 7264,
+          "duration": 506
+        },
+        {
+          "start": 7784.200000047684,
+          "duration": 509
+        },
+        {
+          "start": 8312.899999976158,
+          "duration": 488
+        }
+      ],
+      "frames": [
+        16.599999999999994,
+        50,
+        16.600000000000023,
+        16.69999999999999,
+        166.7,
+        299.90000000000003,
+        616.6999999999999,
+        2066.6000000000004,
+        533.2999999999997,
+        650,
+        533.3000000000002,
+        533.3000000000002,
+        533.3999999999996,
+        533.3000000000002,
+        533.1999999999998,
+        516.6999999999998,
+        533.3000000000011,
+        616.6999999999989
+      ],
+      "paints": [
+        {
+          "name": "first-paint",
+          "start": 200
+        },
+        {
+          "name": "first-contentful-paint",
+          "start": 200
+        }
+      ]
+    },
+    "resources": [
+      {
+        "name": "/static/startup.js",
+        "bytes": 3835,
+        "duration": 21.800000071525574
+      },
+      {
+        "name": "/static/tv-init.js",
+        "bytes": 2112,
+        "duration": 47.5
+      },
+      {
+        "name": "/static/assets/worktv-world-v1.webp",
+        "bytes": 345154,
+        "duration": 51.799999952316284
+      },
+      {
+        "name": "/static/style.css",
+        "bytes": 47894,
+        "duration": 32
+      },
+      {
+        "name": "/css2",
+        "bytes": 12745,
+        "duration": 146.60000002384186
+      },
+      {
+        "name": "/static/motion.css",
+        "bytes": 37644,
+        "duration": 32.59999990463257
+      },
+      {
+        "name": "/static/player-diagnostics.js",
+        "bytes": 4274,
+        "duration": 60.09999990463257
+      },
+      {
+        "name": "/static/media-player.js",
+        "bytes": 6042,
+        "duration": 76.69999992847443
+      },
+      {
+        "name": "/static/social-text.js",
+        "bytes": 1477,
+        "duration": 66.40000009536743
+      },
+      {
+        "name": "/static/pwa.js",
+        "bytes": 2116,
+        "duration": 75.10000002384186
+      },
+      {
+        "name": "/static/tv.js",
+        "bytes": 12471,
+        "duration": 61.39999997615814
+      },
+      {
+        "name": "/static/features.js",
+        "bytes": 1868,
+        "duration": 74.80000007152557
+      },
+      {
+        "name": "/static/worktv-react-fc32f9a707382275.js",
+        "bytes": 275972,
+        "duration": 78
+      },
+      {
+        "name": "/static/coupons.css",
+        "bytes": 1179,
+        "duration": 41.5
+      },
+      {
+        "name": "/static/app.js",
+        "bytes": 61262,
+        "duration": 76.60000002384186
+      },
+      {
+        "name": "/static/coupons.js",
+        "bytes": 6831,
+        "duration": 81.5
+      },
+      {
+        "name": "/static/worktv.css",
+        "bytes": 8267,
+        "duration": 32.59999990463257
+      },
+      {
+        "name": "/static/motion.js",
+        "bytes": 43867,
+        "duration": 81.59999990463257
+      },
+      {
+        "name": "/static/tv.css",
+        "bytes": 7666,
+        "duration": 36.60000002384186
+      },
+      {
+        "name": "/static/worktv-guide.js",
+        "bytes": 6098,
+        "duration": 81.20000004768372
+      },
+      {
+        "name": "/api/bootstrap",
+        "bytes": 701,
+        "duration": 21
+      },
+      {
+        "name": "/api/catalog",
+        "bytes": 4285,
+        "duration": 21
+      },
+      {
+        "name": "/static/assets/worktv-icon.svg",
+        "bytes": 337,
+        "duration": 4.800000071525574
+      },
+      {
+        "name": "/static/assets/hero.png",
+        "bytes": 1979179,
+        "duration": 15.699999928474426
+      },
+      {
+        "name": "/static/worktv/astro-poster.png",
+        "bytes": 51301,
+        "duration": 9.899999976158142
+      },
+      {
+        "name": "/static/assets/neon.jpg",
+        "bytes": 76948,
+        "duration": 17.5
+      },
+      {
+        "name": "/static/assets/abismo.jpg",
+        "bytes": 50332,
+        "duration": 17
+      },
+      {
+        "name": "/static/assets/verao.jpg",
+        "bytes": 102585,
+        "duration": 19.5
+      },
+      {
+        "name": "/static/assets/selvagem.jpg",
+        "bytes": 125466,
+        "duration": 19.699999928474426
+      },
+      {
+        "name": "/static/assets/ultimo.jpg",
+        "bytes": 156313,
+        "duration": 20.399999976158142
+      },
+      {
+        "name": "/static/assets/orbita.jpg",
+        "bytes": 109203,
+        "duration": 20
+      },
+      {
+        "name": "/static/assets/montanha.jpg",
+        "bytes": 131142,
+        "duration": 27.800000071525574
+      },
+      {
+        "name": "/static/worktv/astro-runtime-4fd5625a577e8bb7.js",
+        "bytes": 571978,
+        "duration": 23.600000023841858
+      },
+      {
+        "name": "/static/worktv/astro-web-v4.glb",
+        "bytes": 1337608,
+        "duration": 39.60000002384186
+      }
+    ],
+    "timing": {
+      "name": "http://127.0.0.1:8027/",
+      "entryType": "navigation",
+      "startTime": 0,
+      "duration": 229,
+      "navigationId": 8912,
+      "initiatorType": "navigation",
+      "deliveryType": "",
+      "nextHopProtocol": "http/1.1",
+      "renderBlockingStatus": "non-blocking",
+      "contentType": "text/html",
+      "contentEncoding": "",
+      "workerStart": 0,
+      "workerRouterEvaluationStart": 0,
+      "workerCacheLookupStart": 0,
+      "workerMatchedSourceType": "",
+      "workerFinalSourceType": "",
+      "redirectStart": 0,
+      "redirectEnd": 0,
+      "fetchStart": 0.30000007152557373,
+      "domainLookupStart": 1.600000023841858,
+      "domainLookupEnd": 1.600000023841858,
+      "connectStart": 1.600000023841858,
+      "secureConnectionStart": 0,
+      "connectEnd": 1.8000000715255737,
+      "requestStart": 1.899999976158142,
+      "responseStart": 9.200000047683716,
+      "firstInterimResponseStart": 0,
+      "finalResponseHeadersStart": 9.200000047683716,
+      "responseEnd": 11.399999976158142,
+      "transferSize": 6308,
+      "encodedBodySize": 6008,
+      "decodedBodySize": 6008,
+      "responseStatus": 200,
+      "serverTiming": [],
+      "unloadEventStart": 0,
+      "unloadEventEnd": 0,
+      "domInteractive": 74.80000007152557,
+      "domContentLoadedEventStart": 225.39999997615814,
+      "domContentLoadedEventEnd": 228,
+      "domComplete": 229,
+      "loadEventStart": 229,
+      "loadEventEnd": 229,
+      "type": "navigate",
+      "redirectCount": 0,
+      "activationStart": 0,
+      "criticalCHRestart": 0,
+      "notRestoredReasons": null,
+      "confidence": {
+        "randomizedTriggerRate": 0.4994798,
+        "value": "high"
+      }
+    }
+  }
+}

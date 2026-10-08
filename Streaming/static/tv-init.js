@@ -15,6 +15,7 @@
   // Keep unsupported engines out of an endless spinner, without eval or weakening CSP.
   window.addEventListener('load', function () {
     if (typeof window.navigate === 'function') return;
+    if (window.WorkTVBoot) { window.WorkTVBoot.fail(); return; }
     var app = document.getElementById('app');
     if (!app) return;
     app.innerHTML = '<main style="padding:8%;color:white;background:#070e1c;font:24px sans-serif"><h1>WorkTV</h1><p>O navegador deste aparelho precisa ser atualizado para abrir a WorkTV.</p><p>Atualize o sistema da TV ou use um navegador atualizado em um dispositivo conectado por HDMI.</p><a style="color:#62d6ff" href="/?tv=0">Tentar novamente</a></main>';

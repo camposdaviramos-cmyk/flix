@@ -1,0 +1,35 @@
+{
+  "scenario": "isolated localhost GET /api/catalog, synthetic series; not simultaneous user capacity",
+  "extra_titles": 200,
+  "requests": 120,
+  "concurrency": 8,
+  "threads": 8,
+  "seconds": 1.186,
+  "requests_per_second": 101.22,
+  "latency_ms": {
+    "median": 74.06,
+    "p95": 129.07
+  },
+  "memory_phases": {
+    "before_import": {
+      "VmHWM": "27160 kB",
+      "VmRSS": "27160 kB"
+    },
+    "after_import": {
+      "VmHWM": "47132 kB",
+      "VmRSS": "47132 kB"
+    },
+    "after_init": {
+      "VmHWM": "80348 kB",
+      "VmRSS": "51472 kB"
+    },
+    "after_requests": {
+      "VmHWM": "80348 kB",
+      "VmRSS": "63456 kB"
+    }
+  },
+  "peak_process_rss_mib": 78.46,
+  "errors": 0,
+  "response_bytes": 68555,
+  "memory_method": "Linux /proc/self/status VmRSS and VmHWM; ru_maxrss excluded because launcher high-water accounting differs"
+}

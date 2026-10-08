@@ -36,7 +36,7 @@
   async function load(explicit=false){
     if(window.WorkTVPlatform?.tv){scene.dataset.ready='fallback';return;}
     if(actor||loading||failed||navigator.connection?.saveData&&!explicit)return;
-    loading=import('/static/worktv/astro.js?v=20261007c').then(module=>module.createAstro(scene)).then(value=>{
+    loading=import('/static/worktv/astro-runtime-1e63a387bf42d2ef.js').then(module=>module.createAstro(scene)).then(value=>{
       actor=value;sync();
       if(visible&&!paused()&&!greeted){greeted=true;actor.react('wave');}
     }).catch(()=>{failed=true;scene.dataset.ready='fallback';}).finally(()=>{loading=null;});

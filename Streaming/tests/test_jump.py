@@ -236,7 +236,7 @@ class JumpTests(unittest.TestCase):
         page=self.app.test_client().get('/sala/'+rid)
         self.assertEqual(page.status_code,200)
         self.assertEqual(page.headers['X-Robots-Tag'],'noindex, nofollow')
-        self.assertIn('Convite FlixJump',page.text)
+        self.assertIn('Convite WorkTV Juntos',page.text)
         self.assertNotIn('/sala/'+rid,self.a.get('/sitemap.xml').text)
         self.assertEqual(self.a.get('/sala/notvalid').status_code,404)
 

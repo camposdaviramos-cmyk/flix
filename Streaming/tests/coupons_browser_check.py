@@ -26,7 +26,7 @@ def run():
         try:
             with sync_playwright() as pw:
                 browser=pw.chromium.launch(executable_path='/home/ubuntu/.cache/ms-playwright/chromium-1243/chrome-linux64/chrome',headless=True,args=['--no-sandbox'])
-                ctx=browser.new_context(viewport={'width':1440,'height':1000},bypass_csp=True)
+                ctx=browser.new_context(viewport={'width':1440,'height':1000},bypass_csp=True,reduced_motion='reduce')
                 ctx.add_init_script("localStorage.setItem('vyra-motion-paused','true')")
                 ctx.request.post(url+'/api/auth/login',data={'email':'admin@vyra.local','password':'Admin-browser-123'},headers=headers)
                 page=ctx.new_page();errors=[];page.on('pageerror',lambda e:errors.append(str(e)))
@@ -69,7 +69,7 @@ def run():
                 page.get_by_role('button',name='Ativar cupom TESTE6H',exact=True).click()
                 page.get_by_role('button',name='Desativar cupom TESTE6H',exact=True).wait_for()
                 page.screenshot(path=str(output/'admin-coupons.png'))
-                guest_ctx=browser.new_context(viewport={'width':1100,'height':900},bypass_csp=True)
+                guest_ctx=browser.new_context(viewport={'width':1100,'height':900},bypass_csp=True,reduced_motion='reduce')
                 guest_ctx.add_init_script("localStorage.setItem('vyra-motion-paused','true')")
                 guest=guest_ctx.new_page();guest.on('pageerror',lambda e:errors.append(str(e)))
                 checkout_requests=[]
@@ -110,7 +110,7 @@ def run():
                 page.get_by_text('12 horas',exact=True).wait_for()
                 assert guest_ctx.request.get(url+'/api/bootstrap').json()['user']['expires_at']==boot['user']['expires_at']
                 # Without a coupon, registration still shows the paid checkout confirmation.
-                normal_ctx=browser.new_context(bypass_csp=True)
+                normal_ctx=browser.new_context(bypass_csp=True,reduced_motion='reduce')
                 normal=normal_ctx.new_page();normal.on('pageerror',lambda e:errors.append(str(e)))
                 normal.goto(url+'/planos')
                 normal.locator('[data-action=subscribe][data-id=premium]').click()

@@ -1,0 +1,17 @@
+import {NodeIO} from '@gltf-transform/core';
+import {ALL_EXTENSIONS} from '@gltf-transform/extensions';
+import {dedup,weld,simplify,prune,quantize} from '@gltf-transform/functions';
+import {MeshoptSimplifier} from 'meshoptimizer';
+import {writeFile} from 'node:fs/promises';
+await MeshoptSimplifier.ready;
+const io=new NodeIO().registerExtensions(ALL_EXTENSIONS);
+const doc=await io.read('../static/worktv/astro-v3.glb');
+const before=doc.getRoot().listSkins().map(s=>s.listJoints().map(j=>j.getName()));
+await doc.transform(dedup(),weld(),simplify({simplifier:MeshoptSimplifier,ratio:.28,error:.0008}),prune({keepLeaves:true}),quantize({quantizePosition:14,quantizeNormal:10,quantizeTexcoord:12,quantizeWeight:12}));
+const after=doc.getRoot().listSkins().map(s=>s.listJoints().map(j=>j.getName()));
+if(JSON.stringify(before)!==JSON.stringify(after))throw Error('Skeleton changed');
+await io.write('../static/worktv/astro-web-v4.glb',doc);
+const triangles=doc.getRoot().listMeshes().flatMap(m=>m.listPrimitives()).reduce((n,p)=>n+p.getIndices().getCount()/3,0);
+const bytes=(await io.writeBinary(doc)).length;
+const report={source:'astro-v3.glb',output:'astro-web-v4.glb',originalBytes:7324696,bytes,originalTriangles:171152,triangles,bones:after[0].length,materials:doc.getRoot().listMaterials().length,notes:'Geometry simplification constrained by error; original model preserved. Standard quantization; no runtime WASM decoder.'};
+await writeFile('../docs/astro-optimization.json',JSON.stringify(report,null,2)+'\n');console.log(report);

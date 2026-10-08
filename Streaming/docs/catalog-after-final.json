@@ -1,0 +1,34 @@
+{
+  "scenario": "isolated localhost GET /api/catalog, synthetic series; not simultaneous user capacity",
+  "extra_titles": 200,
+  "requests": 300,
+  "concurrency": 16,
+  "threads": 8,
+  "seconds": 0.317,
+  "requests_per_second": 945.77,
+  "latency_ms": {
+    "median": 16.04,
+    "p95": 20.0
+  },
+  "memory_phases": {
+    "before_import": {
+      "VmHWM": "26972 kB",
+      "VmRSS": "26972 kB"
+    },
+    "after_import": {
+      "VmHWM": "46988 kB",
+      "VmRSS": "46988 kB"
+    },
+    "after_init": {
+      "VmHWM": "80524 kB",
+      "VmRSS": "51584 kB"
+    },
+    "after_requests": {
+      "VmHWM": "80524 kB",
+      "VmRSS": "59408 kB"
+    }
+  },
+  "peak_process_rss_mib": 78.64,
+  "errors": 0,
+  "response_bytes": 68553
+}

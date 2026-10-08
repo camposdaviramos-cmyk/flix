@@ -58,3 +58,8 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline-color:#6ed9ff
 @media(prefers-reduced-motion:reduce){.wt-space-effects *{animation:none!important}.wt-meteor{display:none}}
 
 .wt-hero #wt-astro-hint{color:#c2ddf5;text-shadow:0 2px 5px #000,0 0 12px #071324}.wt-hero .hero-note{color:#c4d4e6;text-shadow:0 1px 5px #0008}
+
+/* Idle drift is composited in CSS; WebGL wakes for gestures and pointer changes. */
+.wt-scene[data-idle=true][data-running=true]{animation:wt-astro-drift 5s ease-in-out infinite}
+@keyframes wt-astro-drift{0%,100%{transform:translate3d(0,0,0) rotate(-.6deg)}50%{transform:translate3d(0,-7px,0) rotate(.6deg)}}
+@media(prefers-reduced-motion:reduce){.wt-scene[data-idle=true]{animation:none}}

@@ -1,0 +1,54 @@
+{
+  "deployed_utc": "2026-10-08T04:18:25Z",
+  "domain": "https://flix.devspacey.com/",
+  "public_check": {
+    "release": "scale-20261008a",
+    "public_react_home": true,
+    "new_model_bones": "52",
+    "idle_webgl_suspended": "true",
+    "guest_lazy_modules": true,
+    "catalog_reload": true,
+    "mobile_no_overflow": true,
+    "javascript_errors": [],
+    "note": "Read-only smoke check; not performance SLA or capacity test."
+  },
+  "origin_check": [
+    {
+      "asset": "worktv-react-c946b16674a67b2a.js",
+      "gzip_bytes": 83375,
+      "decoded_sha256": "c946b16674a67b2a423b37d02b44657b7f6c3390697c8ad7000899908f57665d"
+    },
+    {
+      "asset": "worktv/astro-runtime-1e63a387bf42d2ef.js",
+      "gzip_bytes": 146707,
+      "decoded_sha256": "1e63a387bf42d2ef42b858d4d66113bb8e34250452c0219a85f4cb8e1cd95619"
+    },
+    {
+      "asset": "worktv/astro-web-v4.glb",
+      "gzip_bytes": 586906,
+      "decoded_sha256": "fd2bf78583373c5fb1a2394528b88afaafd38b492f053a867c26825608c1c75d"
+    },
+    {
+      "path": "/",
+      "status": "HTTP/1.1 200 OK",
+      "headers_checked": true
+    },
+    {
+      "path": "/api/catalog",
+      "status": "HTTP/1.1 200 OK",
+      "headers_checked": true
+    },
+    {
+      "path": "/api/library",
+      "status": "HTTP/1.1 401 UNAUTHORIZED",
+      "headers_checked": true
+    },
+    {
+      "path": "/static/offline.html",
+      "status": "HTTP/1.1 200 OK",
+      "headers_checked": true
+    }
+  ],
+  "service_active": true,
+  "nginx_config_test": "pass"
+}

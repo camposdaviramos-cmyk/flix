@@ -139,7 +139,7 @@
       this.hero.insertAdjacentHTML('beforeend', '<div class="vx-hero-line" aria-hidden="true"></div><div class="vx-coordinate" aria-hidden="true"><span>WORKTV ORIGINAL EXPERIENCE</span><strong>01 — ∞</strong></div><div class="vx-orbital-label" aria-hidden="true">ALÉM DO SEU UNIVERSO</div><div class="vx-explore-cue" aria-hidden="true"><i class="vx-mouse"></i><span>EXPLORE. SINTA. DÊ PLAY.</span></div>');
       this.canvas = select('canvas', atmosphere);
       this.ctx = this.canvas.getContext('2d', { alpha: true });
-      this.particles = Array.from({ length: innerWidth < 650 ? 54 : 140 }, (_, i) => ({
+      this.particles = Array.from({ length: innerWidth < 650 ? 40 : 80 }, (_, i) => ({
         x: Math.random(), y: Math.random(), z: .2 + Math.random() * .8,
         radius: .45 + Math.random() * 1.5, speed: .07 + Math.random() * .2,
         phase: Math.random() * Math.PI * 2, red: i % 5 === 0
@@ -333,7 +333,7 @@
       this.documentHeight = Math.max(1, document.documentElement.scrollHeight - this.height);
       if (this.hero) {
         this.heroHeight = this.hero.offsetHeight;
-        this.dpr = Math.min(devicePixelRatio || 1, this.width < 650 ? 1.4 : 1.7);
+        this.dpr = Math.min(devicePixelRatio || 1, this.width < 650 ? 1 : 1);
         if (this.canvas) {
           const w = Math.round(this.width * this.dpr), h = Math.round(this.heroHeight * this.dpr);
           if (this.canvas.width !== w || this.canvas.height !== h) { this.canvas.width = w; this.canvas.height = h; }
@@ -615,6 +615,7 @@
     tick(now) {
       this.frameId = 0;
       if (!this.alive || document.hidden) return;
+      if (this.lastFrame && now - this.lastFrame < 32 && !reduced()) { this.wake(); return; }
       if (this.layoutDirty) this.measure();
       const delta = clamp((now - (this.lastFrame || now - 16.67)) / 16.67, .3, 2);
       this.lastFrame = now;

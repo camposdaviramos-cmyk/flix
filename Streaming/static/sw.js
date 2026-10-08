@@ -1,6 +1,6 @@
 'use strict';
 // Cache only public, same-origin UI resources. Never API data, documents or streams.
-const CACHE='flix-shell-worktv-tv-v2',OFFLINE='/static/offline.html';
+const CACHE='flix-shell-worktv-scale-v4',OFFLINE='/static/offline.html';
 const SHELL=[OFFLINE,'/static/offline.js','/static/assets/worktv-icon-192.png','/static/assets/worktv-icon-512.png'];
 self.addEventListener('install',e=>{e.waitUntil(caches.open(CACHE).then(c=>c.addAll(SHELL)).then(()=>self.skipWaiting()));});
 self.addEventListener('activate',e=>{e.waitUntil(Promise.all([caches.keys().then(keys=>Promise.all(keys.filter(k=>k.startsWith('flix-shell-')&&k!==CACHE).map(k=>caches.delete(k)))),self.clients.claim()]));});

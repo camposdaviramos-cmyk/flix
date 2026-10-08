@@ -1,0 +1,32 @@
+{
+  "release": "scale-20261008a",
+  "backend_full_suite": {
+    "collected": 161,
+    "initial_passed": 160,
+    "initial_failed": 1,
+    "failure": "Outdated invitation brand assertion; expectation updated; all 14 tests of test_jump passed on rerun"
+  },
+  "capacity_security_tests": 7,
+  "browser_passed": [
+    "react_browser_check",
+    "startup_recovery_check",
+    "tv_browser_check",
+    "worktv_browser_check",
+    "mobile_rooms_browser_check",
+    "hub_browser_check",
+    "coupons_browser_check"
+  ],
+  "npm_build_and_progress_check": "pass",
+  "k6_smoke": {
+    "vus": 8,
+    "requests": 72,
+    "http_errors": 0,
+    "checks": 71
+  },
+  "limits": [
+    "No 25000-user load test",
+    "No independent security certification",
+    "No physical TV/device performance certification"
+  ],
+  "public_deployment": "pass; deployment-scale.json"
+}

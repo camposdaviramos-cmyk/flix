@@ -3,7 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <script src="/static/tv-init.js?v=tv-20261007a"></script>
+  <script src="/static/startup.js?v=scale-20261008a"></script>
+  <script src="/static/tv-init.js?v=scale-20261008a"></script>
   <meta name="theme-color" content="#070e1c">
   <link rel="manifest" href="/manifest.webmanifest?v=tv-20261007a">
   <meta name="apple-mobile-web-app-capable" content="yes">
@@ -12,57 +13,31 @@
   <meta name="description" content="Seu próximo universo favorito está aqui. Descubra filmes, séries e TV ao vivo na WorkTV.">
   <title>WorkTV — Dê play no extraordinário</title>
   <link rel="icon" type="image/svg+xml" href="/static/assets/worktv-icon.svg">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;450;500;550;600;650;700&family=Outfit:wght@400;500;600;650;700;750;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/style.css?v=worktv-20261006a">
-  <link rel="stylesheet" href="/static/motion.css?v=worktv-20261006a">
-  <script src="/static/vendor/hls.min.js" defer></script>
-  <script src="/static/player-diagnostics.js?v=worktv-20261006a" defer></script>
-  <script src="/static/media-player.js?v=tv-20261007a" defer></script>
-  <script src="/static/social-text.js?v=worktv-20261006a" defer></script>
-  <script src="/static/pwa.js?v=tv-20261007a" defer></script>
-  <script src="/static/tv.js?v=tv-20261007a" defer></script>
-  <script src="/static/app.js?v=tv-20261007a" defer></script>
-  <script src="/static/admin.js?v=worktv-20261006a" defer></script>
-  <link rel="stylesheet" href="/static/jump.css?v=worktv-20261006a">
-  <script src="/static/jump.js?v=tv-20261007a" defer></script>
-  <link rel="stylesheet" href="/static/coupons.css?v=worktv-20261006a">
-  <script src="/static/coupons.js?v=worktv-20261006a" defer></script>
-  <link rel="stylesheet" href="/static/community.css?v=worktv-20261006a">
-  <script src="/static/community.js?v=worktv-20261006a" defer></script>
-  <link rel="stylesheet" href="/static/community-social.css?v=worktv-20261006a">
-  <script src="/static/community-social.js?v=worktv-20261006a" defer></script>
-  <link rel="stylesheet" href="/static/community-studio.css?v=worktv-20261006a">
-  <script src="/static/community-studio.js?v=worktv-20261006a" defer></script>
-  <script src="/static/community-games.js?v=worktv-20261006a" defer></script>
-  <script src="/static/community-room.js?v=worktv-20261006a" defer></script>
-  <link rel="stylesheet" href="/static/social-hub.css?v=worktv-20261006a">
-  <script src="/static/social-hub.js?v=tv-20261007a" defer></script>
-  <link rel="stylesheet" href="/static/community-create.css?v=worktv-20261006a">
-  <link rel="stylesheet" href="/static/story-studio.css?v=worktv-20261006a">
-  <script src="/static/story-studio.js?v=worktv-20261006a" defer></script>
-  <link rel="stylesheet" href="/static/reel-studio.css?v=worktv-20261006a">
-  <script src="/static/reel-studio.js?v=worktv-20261006a" defer></script>
-  <script src="/static/community-create.js?v=worktv-20261006a" defer></script>
-  <script src="/static/community-feed.js?v=worktv-20261006a" defer></script>
-  <link rel="stylesheet" href="/static/social-spaces.css?v=worktv-20261006a">
-  <script src="/static/social-spaces.js?v=worktv-20261006a" defer></script>
-  <link rel="stylesheet" href="/static/flix-music.css?v=worktv-20261006a">
-  <script src="/static/flix-music.js?v=worktv-20261006a" defer></script>
-  <link rel="stylesheet" href="/static/room-mobile.css?v=worktv-20261006a">
-  <link rel="stylesheet" href="/static/flix-wallet.css?v=worktv-20261006a">
-  <script src="/static/flix-wallet.js?v=worktv-20261006a" defer></script>
-  <script src="/static/room-mobile.js?v=worktv-20261006a" defer></script>
-  <script src="/static/jump-mobile.js?v=worktv-20261006a" defer></script>
-  <script src="/static/motion.js?v=tv-20261007a" defer></script>
-  <link rel="stylesheet" href="/static/worktv.css?v=astro-layout-20261007d">
-  <script src="/static/worktv-guide.js?v=tv-20261007a" defer></script>
-  <link rel="stylesheet" href="/static/tv.css?v=tv-20261007a">
+  <link rel="preload" as="image" href="/static/assets/worktv-world-v1.webp" fetchpriority="high">
+  <link rel="stylesheet" href="/static/fonts.css?v=scale-20261008a">
+  <link rel="preload" href="/static/fonts/outfit-latin-v1.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/static/fonts/dm-sans-latin-v1.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/static/style.css?v=scale-20261008a">
+  <link rel="stylesheet" href="/static/motion.css?v=scale-20261008a">
+  <script src="/static/player-diagnostics.js?v=scale-20261008a" defer></script>
+  <script src="/static/media-player.js?v=scale-20261008a" defer></script>
+  <script src="/static/social-text.js?v=scale-20261008a" defer></script>
+  <script src="/static/pwa.js?v=scale-20261008a" defer></script>
+  <script src="/static/tv.js?v=scale-20261008a" defer></script>
+  <script data-worktv-react src="/static/worktv-react-c946b16674a67b2a.js?v=c946b16674a67b2a" defer></script>
+  <script src="/static/features.js?v=scale-20261008a" defer></script>
+  <script src="/static/app.js?v=scale-20261008a" defer></script>
+  <link rel="stylesheet" href="/static/coupons.css?v=scale-20261008a">
+  <script src="/static/coupons.js?v=scale-20261008a" defer></script>
+  <script src="/static/motion.js?v=scale-20261008a" defer></script>
+  <link rel="stylesheet" href="/static/worktv.css?v=scale-20261008a">
+  <script src="/static/worktv-guide.js?v=scale-20261008a" defer></script>
+  <link rel="stylesheet" href="/static/tv.css?v=scale-20261008a">
 </head>
 <body>
   <a class="skip-link" href="#main">Pular para o conteúdo</a>
-  <div id="app"><div class="boot"><span class="brand">WorkTV<span>•</span></span><span class="loader"></span></div></div>
+  <div id="app"><div class="boot" role="status" aria-label="Carregando WorkTV"><span class="brand">WorkTV<span>•</span></span><span class="loader" aria-hidden="true"></span></div></div>
+  <!--SEO_FALLBACK-->
   <dialog id="modal" aria-label="Janela de conteúdo"></dialog>
   <div id="toasts" role="status" aria-live="polite"></div>
 </body>

@@ -1,0 +1,11 @@
+{
+  "source": "astro-v3.glb",
+  "output": "astro-web-v4.glb",
+  "originalBytes": 7324696,
+  "bytes": 1337608,
+  "originalTriangles": 171152,
+  "triangles": 53514,
+  "bones": 52,
+  "materials": 10,
+  "notes": "Geometry simplification constrained by error; original model preserved. Standard quantization; no runtime WASM decoder."
+}
