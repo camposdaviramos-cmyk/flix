@@ -1,0 +1,28 @@
+{
+  "status": "PASS",
+  "qr_visible_without_extra_click": true,
+  "password_visible": true,
+  "official_logo": true,
+  "actual_pixel_camera_decode": true,
+  "camera_tracks_stopped": true,
+  "phone_approval_tv_login": true,
+  "permission_denial_handled": true,
+  "image_decode": true,
+  "mobile_overflow": false,
+  "page_errors": [],
+  "release": "qr-20261008b",
+  "published": true,
+  "logo_sha256": "b8a2aec19f044bee19e40230021596689f6c8e9b3df0657fafc9921f164bc4c5",
+  "logo_exact_original": true,
+  "api_tests_passed": 15,
+  "old_pwa_recovery": true,
+  "public_check": {
+    "status": "PASS",
+    "public_release": "qr-20261008b",
+    "qr_automatic": true,
+    "official_logo": true,
+    "mobile_scanner_route": true,
+    "html_no_store": true,
+    "javascript_errors": []
+  }
+}

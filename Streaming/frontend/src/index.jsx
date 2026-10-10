@@ -7,6 +7,8 @@ import { Catalog, Continue, History } from "./catalog.jsx";
 import { Title, Plans, Player } from "./details.jsx";
 import { Account, Legal } from "./account.jsx";
 import { Wallet, WalletPurchase } from "./wallet.jsx";
+import { Profiles, ActivateDevice } from "./access.jsx";
+import {Scanner} from "./scanner.jsx";
 import { Auth } from "./auth.jsx";
 const routes = [
   "/",
@@ -19,6 +21,9 @@ const routes = [
   "/historico",
   "/planos",
   "/conta",
+  "/perfis",
+  "/ativar",
+  "/escanear",
   "/carteira",
   "/termos",
   "/privacidade",
@@ -64,6 +69,9 @@ function Page({ path }) {
   if (path.startsWith("/titulo/")) return <Title />;
   if (path === "/planos") return <Plans />;
   if (path === "/carteira") return <Wallet />;
+  if (path === "/perfis") return <Profiles />;
+  if (path === "/escanear") return <Scanner />;
+  if (path === "/ativar") return <ActivateDevice />;
   if (path === "/conta") return <Account />;
   if (path === "/termos" || path === "/privacidade") return <Legal />;
   if (path === "/continuar") return <Continue />;
@@ -71,6 +79,7 @@ function Page({ path }) {
   return <Catalog />;
 }
 window.WorkTVUI = {
+  release: "account-20261009a",
   supports: (path) => routes.includes(path) || path.startsWith("/titulo/"),
   render(element, context) {
     root = createRoot(element, {

@@ -1,6 +1,8 @@
-# Flix — streaming e comunidade
+# WorkTV — streaming e comunidade
 
-Aplicação em português para filmes, séries e TV ao vivo, com landing page animada, catálogo, contas, planos, checkout e administração. Python 3.11+, Flask, SQLite e frontend HTML/CSS/JavaScript. O servidor usa Waitress. Salas, lives com convidados, jogos, chat com chamadas, notificações e PWA estão documentados em [COMMUNITY.md](COMMUNITY.md).
+Aplicação em português para filmes, séries e TV ao vivo, com landing page animada, catálogo, contas, planos, checkout e administração. Python/Flask nas APIs, PostgreSQL e Redis em produção, React nas páginas principais e HTML/CSS/JavaScript nos módulos legados. SQLite permanece para desenvolvimento local. O servidor usa Waitress. Salas, lives com convidados, jogos, chat com chamadas, notificações e PWA estão documentados em [COMMUNITY.md](COMMUNITY.md).
+
+A operação PostgreSQL, login por QR Code, três perfis e MFA estão documentados em [postgresql-access.md](docs/postgresql-access.md).
 
 ## Executar no Windows
 
@@ -27,10 +29,10 @@ Altere a senha em **Minha conta** depois do primeiro acesso. O arquivo de acesso
 ## Funcionalidades
 
 - Landing page responsiva com arte original, movimento cinematográfico, animações durante a rolagem, vitrines, planos, FAQ e CTAs. Respeita a preferência por redução de movimento.
-- Catálogos de filmes, séries e TV, busca, filtros, detalhes e favoritos por usuário.
+- Catálogos de filmes, séries e TV, busca, filtros, detalhes e favoritos por perfil.
 - Reprodução MP4/WebM compatível com o navegador e HLS com hls.js local. Controles nativos, tela cheia, Picture-in-Picture quando suportado, próximo episódio e reinício.
-- Posição fracionada por usuário, filme e episódio armazenada no servidor. Salva a cada 2,5 segundos durante a reprodução, ao pausar, buscar uma posição, fechar o player ou ocultar a página. A retomada usa a posição registrada, inclusive em outro dispositivo. Fechamento forçado do processo pode perder o intervalo desde a última gravação.
-- Fila local por usuário para sincronizar progresso após falha de conexão. Atualizações antigas não sobrescrevem as mais novas.
+- Posição fracionada por perfil, filme e episódio armazenada no servidor. Atualiza o checkpoint local a cada 2,5 segundos e sincroniza com o servidor a cada 15 segundos durante a reprodução, ao pausar, buscar uma posição, fechar o player ou ocultar a página. A retomada usa a posição registrada, inclusive em outro dispositivo. Fechamento forçado do processo pode perder o intervalo desde a última gravação.
+- Fila local por perfil para sincronizar progresso após falha de conexão. Atualizações antigas não sobrescrevem as mais novas.
 - Cadastro vinculado a plano, login, logout, alteração de senha, sessões HttpOnly e restrição de acesso por validade. Limite de sessões de login conforme o plano; não é uma contagem de players simultâneos.
 - Administração de filmes, séries, temporadas e episódios; publicação/rascunho; destaques; exclusão e edição.
 - Cadastro de canais, importação de listas, edição e exclusão.
@@ -99,7 +101,7 @@ O sistema local em `static/motion.js` e `static/motion.css` inclui abertura cine
 
 No celular, deslize horizontalmente no palco para trocar entre filmes, séries e TV; toque nas telas ou deslize na demonstração de dispositivos para mudar o foco. O catálogo mantém a rolagem horizontal nativa e as capas respondem ao pressionar. Toques no fundo da abertura criam ondas nas partículas. A rolagem vertical e o zoom por pinça continuam disponíveis.
 
-As cenas de dispositivos são demonstrações visuais; o player real usa os dados persistidos no servidor. As animações respeitam a preferência do sistema e podem ser pausadas pelo botão **Movimento ativo**. O motor suspende o Canvas fora da abertura e interrompe a renderização quando a aba está oculta; seus observadores são removidos ao trocar de página.
+As cenas de dispositivos são demonstrações visuais; o player real usa os dados persistidos no servidor. As animações respeitam a preferência do sistema e não exibem o antigo botão Movimento ativo. O motor suspende o Canvas fora da abertura e interrompe a renderização quando a aba está oculta; seus observadores são removidos ao trocar de página.
 
 Para validar mouse, toque, rolagem, teclado, pausa, navegação e capturar prévias:
 

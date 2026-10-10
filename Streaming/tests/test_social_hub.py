@@ -103,8 +103,8 @@ class HubTests(unittest.TestCase):
         self.assertEqual(self.call(self.b,'/hub/push/subscriptions',{**sub,'endpoint':'https://127.0.0.1/internal'}).status_code,400)
         self.assertEqual(self.call(self.b,'/hub/push/subscriptions',{**sub,'endpoint':'https://fcm.googleapis.com.evil.test/send'}).status_code,400)
         self.call(self.a,'/hub/dm/'+self.ub['id'],{'body':'Test push'});jobs=[]
-        with sqlite3.connect(self.db.execute('PRAGMA database_list').fetchone()[2]) as conn:
-            conn.row_factory=sqlite3.Row;conn.execute('PRAGMA foreign_keys=ON');flix_push.deliver(conn,self.tmp.name,lambda **kw:jobs.append(kw))
+        with self.app.extensions['connect_db']() as conn:
+            flix_push.deliver(conn,self.tmp.name,lambda **kw:jobs.append(kw))
         self.assertEqual(len(jobs),1);self.assertEqual(json.loads(jobs[0]['data'])['title'],'alice');self.assertEqual(json.loads(jobs[0]['data'])['body'],'Test push');self.assertEqual(jobs[0]['timeout'],8)
         self.call(self.b,'/hub/preferences',{'message_preview':False},'PATCH');self.call(self.a,'/hub/dm/'+self.ub['id'],{'body':'Keep private'});flix_push.deliver(self.db,self.tmp.name,lambda **kw:jobs.append(kw));self.assertEqual(len(jobs),2);self.assertNotIn('Keep private',jobs[-1]['data'])
         self.call(self.b,'/hub/preferences',{'messages':False},'PATCH');self.call(self.a,'/hub/dm/'+self.ub['id'],{'body':'Muted push'});flix_push.deliver(self.db,self.tmp.name,lambda **kw:jobs.append(kw));self.assertEqual(len(jobs),2)

@@ -1,7 +1,12 @@
-import React from "react";
+import React, {useState} from "react";
+import {DeviceLogin} from "./access.jsx";
 import { useApp, Brand, Icon, money } from "./shared.jsx";
 export function Auth({ mode = "login" }) {
-  const { s } = useApp();
+  const { s, actions } = useApp();
+  const [qrMode,setQrMode]=useState(false);
+  const [mfa,setMfa]=useState(false),[error,setError]=useState(''),[busy,setBusy]=useState(false);
+  async function login(e){e.preventDefault();e.stopPropagation();setBusy(true);setError('');try{const result=await actions.request('/auth/login',{method:'POST',body:Object.fromEntries(new FormData(e.currentTarget))});if(result.mfa_required){setMfa(true);return;}await actions.authenticated();}catch(e){setError(e.message);}finally{setBusy(false);}}
+
   const register = mode === "register",
     p = s.plans.find((p) => p.id === s.selectedPlan) || s.plans[0];
   return (
@@ -27,7 +32,7 @@ export function Auth({ mode = "login" }) {
           </span>
         </div>
       )}
-      <form id="auth-form" data-mode={mode}>
+      <div className={register?"auth-methods register":"auth-methods"}><form id="auth-form" data-mode={mode} onSubmit={register?undefined:login}>
         {register && (
           <>
             <div className="field">
@@ -119,12 +124,14 @@ export function Auth({ mode = "login" }) {
             </label>
           </>
         )}
-        <div className="form-error" role="alert" />
-        <button className="btn btn-primary full-width" type="submit">
+        {mfa&&<div className="field"><label htmlFor="auth-code">Código do autenticador ou de recuperação</label><input id="auth-code" name="code" autoComplete="one-time-code" maxLength="32" required autoFocus/></div>}
+        <div className="form-error" role="alert">{error}</div>
+        <button className="btn btn-primary full-width" type="submit" disabled={busy}>
           {register ? "Criar conta e continuar" : "Entrar na minha conta"}{" "}
           <Icon name="arrow" />
         </button>
       </form>
+      {!register&&<DeviceLogin onExpanded={setQrMode}/>}</div>
       {register && (
         <p className="auth-terms">
           Com um cupom válido de teste grátis, o acesso é liberado no cadastro.

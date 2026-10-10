@@ -26,6 +26,7 @@ from seed import catalog, SAMPLE
 from public_cache import PublicCatalogCache
 from proxy_security import LocalProxyHeaders
 import flix_wallet
+import account_profiles, auth_security, device_login, access_schema
 from community import migrate as migrate_community, register_community
 from jump import migrate as migrate_jump, register_jump, username_for
 from coupons import migrate as migrate_coupons, register_coupons, available_coupon, redeem as redeem_coupon
@@ -54,10 +55,16 @@ class APIError(Exception):
     def __init__(self, message, status=400):
         self.message, self.status = message, status
 
-def create_app(data_dir=None, testing=False):
+def create_app(data_dir=None, testing=False, database_url=None):
     app = Flask(__name__, static_folder='static')
     app.wsgi_app = LocalProxyHeaders(app.wsgi_app)
-    catalog_cache = PublicCatalogCache()
+    security_store=None
+    if os.getenv('WORKTV_REDIS_URL') and not testing:
+        from security_store import SecurityStore
+        security_store=SecurityStore(os.environ['WORKTV_REDIS_URL'])
+        security_store.client.ping()
+    app.extensions['security_store']=security_store
+    catalog_cache = PublicCatalogCache(shared=security_store.client if security_store else None)
     dummy_password_hash = generate_password_hash(secrets.token_urlsafe(32))
     app.extensions['public_catalog_cache'] = catalog_cache
     if not testing:
@@ -66,15 +73,30 @@ def create_app(data_dir=None, testing=False):
     folder.mkdir(parents=True, exist_ok=True)
     keyfile = folder / 'secret.key'
     if not keyfile.exists():
-        keyfile.write_bytes(Fernet.generate_key())
+        fd=os.open(keyfile,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
+        with os.fdopen(fd,'wb') as key: key.write(Fernet.generate_key())
     cipher = Fernet(keyfile.read_bytes())
-    app.config.update(TESTING=testing, MAX_CONTENT_LENGTH=2_100_000, DATA_DIR=folder)
+    app.config.update(TESTING=testing, MAX_CONTENT_LENGTH=2_100_000, DATA_DIR=folder, ADMIN_MFA_REQUIRED=os.getenv('WORKTV_ADMIN_MFA_REQUIRED','0')=='1' and not testing)
+
+    database_url = database_url or (os.getenv('WORKTV_DATABASE_URL') if not testing else None)
+    database = None
+    if database_url:
+        from postgres_backend import Database
+        database = Database(database_url, max_size=int(os.getenv('WORKTV_DB_POOL_SIZE','12')))
+        app.extensions['database'] = database
+
+    def connect_db():
+        if database:
+            return database.connect()
+        connection = sqlite3.connect(folder / 'vyra.sqlite3', timeout=20)
+        connection.row_factory = sqlite3.Row
+        connection.execute('PRAGMA foreign_keys=ON')
+        return connection
+    app.extensions['connect_db'] = connect_db
 
     def db():
         if 'db' not in g:
-            g.db = sqlite3.connect(folder / 'vyra.sqlite3', timeout=20)
-            g.db.row_factory = sqlite3.Row
-            g.db.execute('PRAGMA foreign_keys=ON')
+            g.db = connect_db()
         return g.db
 
     @app.teardown_appcontext
@@ -92,44 +114,66 @@ def create_app(data_dir=None, testing=False):
         value = cipher.encrypt(value.encode()).decode() if key in ('access_token', 'webhook_secret','youtube_api_key','soundcloud_client_id','soundcloud_client_secret','soundcloud_token') else value
         db().execute('INSERT OR REPLACE INTO settings VALUES(?,?)', (key, value))
 
+    if database:
+        with app.app_context():
+            if not db().execute('SELECT 1 FROM worktv_schema_version WHERE version=1').fetchone():
+                raise RuntimeError('Apply PostgreSQL migration before starting WorkTV')
+    else:
+        with app.app_context():
+            db().executescript(SCHEMA)
+            if not db().execute('SELECT 1 FROM plans LIMIT 1').fetchone():
+                for p in [('essencial','Essencial',1990,30,'Full HD',1,['Filmes e séries','TV ao vivo','Continue de onde parou'],0),('premium','Premium',2990,30,'4K Ultra HD',2,['Todo o catálogo','TV ao vivo','Continue de onde parou','Até 2 sessões de acesso'],1),('familia','Família',3990,30,'4K Ultra HD',4,['Todo o catálogo','TV ao vivo','Continue de onde parou','Até 4 sessões de acesso'],0)]:
+                    db().execute('INSERT INTO plans(id,name,price,days,quality,devices,features,featured) VALUES(?,?,?,?,?,?,?,?)', (*p[:6],json.dumps(p[6]),p[7]))
+                for c in catalog():
+                    insert_content(db(), c)
+                    if c['kind'] == 'series':
+                        for n, title in enumerate(['O começo de tudo', 'Além das aparências', 'Um novo caminho'], 1):
+                            db().execute('INSERT INTO episodes VALUES(?,?,?,?,?,?,?)', (uuid.uuid4().hex,c['id'],1,n,title,SAMPLE,'14min'))
+                db().execute('INSERT INTO settings VALUES(?,?)', ('brand','WorkTV'))
+                db().execute('INSERT INTO settings VALUES(?,?)', ('mode','test'))
+            if not db().execute("SELECT 1 FROM users WHERE role='admin'").fetchone():
+                password = secrets.token_urlsafe(15)
+                db().execute('INSERT INTO users(id,name,email,password,role,created_at) VALUES(?,?,?,?,?,?)', (uuid.uuid4().hex,'Administrador','admin@vyra.local',generate_password_hash(password),'admin',time.time()))
+                if not testing:
+                    (folder / 'initial-admin.txt').write_text(f'URL: http://localhost:8000/admin\nE-mail: admin@vyra.local\nSenha: {password}\n\nAltere a senha na sua conta depois do primeiro acesso.\n', encoding='utf-8')
+            for item in catalog():
+                if (ROOT / 'static' / 'assets' / (item['id'] + '.jpg')).exists():
+                    local = '/static/assets/' + item['id'] + '.jpg'
+                    db().execute('UPDATE content SET poster=?,backdrop=? WHERE id=? AND poster=?',(local,local,item['id'],item['poster']))
+            old_sample = 'https://storage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4'
+            db().execute('UPDATE content SET video_url=? WHERE sample=1 AND video_url=?',(SAMPLE,old_sample))
+            db().execute('UPDATE episodes SET video_url=? WHERE video_url=? AND content_id IN (SELECT id FROM content WHERE sample=1)',(SAMPLE,old_sample))
+            migrate_jump(db())
+            migrate_coupons(db())
+            migrate_community(db())
+            db().execute("UPDATE settings SET value='WorkTV' WHERE key='brand' AND UPPER(value) IN ('VYRA','FLIX')")
+            db().commit()
     with app.app_context():
-        db().executescript(SCHEMA)
-        if not db().execute('SELECT 1 FROM plans LIMIT 1').fetchone():
-            for p in [('essencial','Essencial',1990,30,'Full HD',1,['Filmes e séries','TV ao vivo','Continue de onde parou'],0),('premium','Premium',2990,30,'4K Ultra HD',2,['Todo o catálogo','TV ao vivo','Continue de onde parou','Até 2 sessões de acesso'],1),('familia','Família',3990,30,'4K Ultra HD',4,['Todo o catálogo','TV ao vivo','Continue de onde parou','Até 4 sessões de acesso'],0)]:
-                db().execute('INSERT INTO plans(id,name,price,days,quality,devices,features,featured) VALUES(?,?,?,?,?,?,?,?)', (*p[:6],json.dumps(p[6]),p[7]))
-            for c in catalog():
-                insert_content(db(), c)
-                if c['kind'] == 'series':
-                    for n, title in enumerate(['O começo de tudo', 'Além das aparências', 'Um novo caminho'], 1):
-                        db().execute('INSERT INTO episodes VALUES(?,?,?,?,?,?,?)', (uuid.uuid4().hex,c['id'],1,n,title,SAMPLE,'14min'))
-            db().execute('INSERT INTO settings VALUES(?,?)', ('brand','WorkTV'))
-            db().execute('INSERT INTO settings VALUES(?,?)', ('mode','test'))
-        if not db().execute("SELECT 1 FROM users WHERE role='admin'").fetchone():
-            password = secrets.token_urlsafe(15)
-            db().execute('INSERT INTO users(id,name,email,password,role,created_at) VALUES(?,?,?,?,?,?)', (uuid.uuid4().hex,'Administrador','admin@vyra.local',generate_password_hash(password),'admin',time.time()))
-            if not testing:
-                (folder / 'initial-admin.txt').write_text(f'URL: http://localhost:8000/admin\nE-mail: admin@vyra.local\nSenha: {password}\n\nAltere a senha na sua conta depois do primeiro acesso.\n', encoding='utf-8')
-        for item in catalog():
-            if (ROOT / 'static' / 'assets' / (item['id'] + '.jpg')).exists():
-                local = '/static/assets/' + item['id'] + '.jpg'
-                db().execute('UPDATE content SET poster=?,backdrop=? WHERE id=? AND poster=?',(local,local,item['id'],item['poster']))
-        old_sample = 'https://storage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4'
-        db().execute('UPDATE content SET video_url=? WHERE sample=1 AND video_url=?',(SAMPLE,old_sample))
-        db().execute('UPDATE episodes SET video_url=? WHERE video_url=? AND content_id IN (SELECT id FROM content WHERE sample=1)',(SAMPLE,old_sample))
-        migrate_jump(db())
-        migrate_coupons(db())
-        migrate_community(db())
-        db().execute("UPDATE settings SET value='WorkTV' WHERE key='brand' AND UPPER(value) IN ('VYRA','FLIX')")
-        db().commit()
+        if not database:
+            access_schema.migrate(db())
+        elif not db().execute('SELECT 1 FROM account_access_version WHERE version=1').fetchone():
+            raise RuntimeError('Apply account access migration before starting WorkTV')
+
+    import community_module
 
     @app.before_request
     def protect():
         if request.path in ('/api/community/assets','/api/hub/audio') and request.method=='POST':
             request.max_content_length=26*1024*1024
         g.user = None
+        g.profile = None
         token = request.cookies.get('vyra_session', '')
         if token and request.path not in ('/api/catalog','/api/seo','/sitemap.xml','/robots.txt'):
             g.user = db().execute("SELECT u.* FROM users u JOIN sessions s ON u.id=s.user_id WHERE s.token=? AND s.expires_at>? AND u.status='active'", (hashlib.sha256(token.encode()).hexdigest(),time.time())).fetchone()
+        g.session_token = hashlib.sha256(token.encode()).hexdigest()
+        if g.user:
+            g.profile = account_profiles.selected(db(),g.user['id'],g.session_token)
+        g.admin_setup_required=bool(g.user and g.user['role']=='admin' and app.config['ADMIN_MFA_REQUIRED'] and not auth_security.verified(db(),g.session_token))
+        if g.admin_setup_required and request.path.startswith('/api/'):
+            # Block privilege shortcuts on community routes too, not just /api/admin.
+            enrollment={'/api/client-version','/api/bootstrap','/api/library','/api/orders','/api/account','/api/auth/security','/api/auth/logout','/api/auth/login'}
+            if request.path not in enrollment and not request.path.startswith('/api/auth/mfa/'):
+                raise APIError('Ative a verificação em duas etapas em Minha conta para continuar com esta conta administrativa.',403)
         if request.path.startswith('/api/') and request.method not in ('GET','HEAD','OPTIONS') and request.path != '/api/payments/webhook':
             if request.headers.get('Sec-Fetch-Site') == 'cross-site':
                 raise APIError('Origem da solicitação não permitida.',403)
@@ -138,6 +182,13 @@ def create_app(data_dir=None, testing=False):
                 raise APIError('Origem da solicitação não permitida.',403)
             if request.headers.get('X-Requested-With') not in ('VYRA','Flix'):
                 raise APIError('Solicitação inválida. Recarregue a página.',403)
+
+    @app.before_request
+    def community_module_guard():
+        path = request.path
+        is_api = community_module.matches(path, community_module.API_ROOTS)
+        if (is_api or community_module.matches(path, community_module.PAGE_ROOTS)) and not community_module.enabled(db()):
+            return community_module.unavailable(is_api)
 
     @app.after_request
     def headers(response):
@@ -161,6 +212,7 @@ def create_app(data_dir=None, testing=False):
             response.headers['Content-Security-Policy']=response.headers['Content-Security-Policy'].replace('; frame-ancestors', ' '+' '.join(sorted(origins))+'; frame-ancestors')
         if request.path.startswith('/api/'):
             response.headers['Cache-Control'] = 'no-store'
+            response.headers['CDN-Cache-Control'] = 'no-store'
         return response
 
     @app.errorhandler(APIError)
@@ -201,13 +253,18 @@ def create_app(data_dir=None, testing=False):
         if not user:
             return None
         value = {k:user[k] for k in ('id','name','username','email','role','status','plan_id','expires_at','created_at','verified')}
-        profile = db().execute('SELECT avatar FROM community_profiles WHERE user_id=?',(user['id'],)).fetchone()
+        profile = db().execute('SELECT avatar,avatar_png IS NOT NULL AS has_avatar,updated_at FROM community_profiles WHERE user_id=?',(user['id'],)).fetchone()
         value['avatar'] = profile['avatar'] if profile else ''
+        if profile and profile['has_avatar'] and value['avatar'].startswith('/api/community/avatars/') and (not g.user or g.user['id']==user['id']):
+            value['avatar'] = '/api/account/avatar?v='+str(int((profile['updated_at'] or 0)*1000))
         value['subscribed'] = user['role']=='admin' or user['expires_at']>time.time()
         return value
 
-    def session_response(user, **extra):
+    def session_response(user, profile_id=None, mfa_verified=False, **extra):
         token = secrets.token_urlsafe(40)
+        if database:
+            if not db().in_transaction:db().execute('BEGIN IMMEDIATE')
+            db().execute('SELECT id FROM users WHERE id=? FOR NO KEY UPDATE',(user['id'],))
         db().execute('DELETE FROM sessions WHERE expires_at<?',(time.time(),))
         if user['role'] != 'admin':
             plan = db().execute('SELECT devices FROM plans WHERE id=?',(user['plan_id'],)).fetchone()
@@ -215,7 +272,12 @@ def create_app(data_dir=None, testing=False):
             old = db().execute('SELECT token FROM sessions WHERE user_id=? ORDER BY expires_at DESC',(user['id'],)).fetchall()
             for row in old[max(0,limit-1):]:
                 db().execute('DELETE FROM sessions WHERE token=?',(row['token'],))
-        db().execute('INSERT INTO sessions VALUES(?,?,?)',(hashlib.sha256(token.encode()).hexdigest(),user['id'],time.time()+30*86400))
+        token_hash=hashlib.sha256(token.encode()).hexdigest()
+        db().execute('INSERT INTO sessions VALUES(?,?,?)',(token_hash,user['id'],time.time()+30*86400))
+        default_profile=account_profiles.ensure(db(),user)
+        chosen=db().execute('SELECT id FROM account_profiles WHERE id=? AND user_id=?',(profile_id,user['id'])).fetchone() if profile_id else None
+        account_profiles.bind(db(),token_hash,chosen[0] if chosen else default_profile)
+        auth_security.bind(db(),token_hash,mfa_verified)
         db().commit()
         response = jsonify(user=public_user(user), **extra)
         response.set_cookie('vyra_session',token,httponly=True,secure=request.is_secure or setting('public_url').startswith('https://'),samesite='Lax',max_age=30*86400)
@@ -227,6 +289,14 @@ def create_app(data_dir=None, testing=False):
         peer = request.remote_addr or 'unknown'
         ip_key = hashlib.sha256(('ip:'+peer).encode()).hexdigest()
         account_key = hashlib.sha256(('login:'+peer+':'+email).encode()).hexdigest()
+        if security_store:
+            from redis.exceptions import RedisError
+            limits=[('ip:'+peer,300),('login:'+peer+':'+(g.user['id'] if g.user and request.path.startswith('/api/auth/mfa/') else email),15)]
+            if email:limits.append(('account:'+email,60))
+            try:allowed=security_store.allow('auth',limits,900)
+            except RedisError:raise APIError('O login está temporariamente indisponível. Tente novamente em instantes.',503)
+            if not allowed:raise APIError('Muitas tentativas. Aguarde 15 minutos.',429)
+            return
         now = time.time()
         connection = db()
         # Serialize check + increment; concurrent attempts must not all pass the same count.
@@ -240,12 +310,16 @@ def create_app(data_dir=None, testing=False):
         connection.executemany('INSERT INTO attempts VALUES(?,?)',[(ip_key,now),(account_key,now)])
         connection.commit()
 
+    @app.get('/api/client-version')
+    def client_version():
+        return jsonify(release='account-20261009a',modules={'community':community_module.enabled(db())})
+
     @app.get('/api/bootstrap')
     def bootstrap():
         plans=[dict(p) for p in db().execute('SELECT * FROM plans WHERE active=1 ORDER BY price')]
         for p in plans:
             p['features']=json.loads(p['features'])
-        return jsonify(brand=setting('brand','WorkTV'),plans=plans,user=public_user(g.user),checkout_ready=bool(setting('access_token') and setting('webhook_secret') and setting('public_url')),support_email=setting('support_email',''))
+        return jsonify(modules={'community':community_module.enabled(db())},brand=setting('brand','WorkTV'),plans=plans,user=public_user(g.user),profile=g.profile,admin_setup_required=g.admin_setup_required,checkout_ready=bool(setting('access_token') and setting('webhook_secret') and setting('public_url')),support_email=setting('support_email',''))
 
     @app.post('/api/auth/register')
     def register():
@@ -259,6 +333,8 @@ def create_app(data_dir=None, testing=False):
         if not 10<=len(password)<=128:
             raise APIError('Use uma senha entre 10 e 128 caracteres.')
         community_account=d.get('account_type')=='community'
+        if community_account and not community_module.enabled(db()):
+            return community_module.unavailable()
         plan_id=None if community_account else d.get('plan_id')
         if not community_account and not db().execute('SELECT 1 FROM plans WHERE id=? AND active=1',(plan_id,)).fetchone():
             raise APIError('Selecione um plano disponível.')
@@ -292,7 +368,13 @@ def create_app(data_dir=None, testing=False):
         valid_password = check_password_hash(user['password'] if user else dummy_password_hash, password[:129])
         if not user or not valid_password or len(password)>128 or user['status']!='active':
             raise APIError('E-mail ou senha inválidos, ou conta bloqueada.',401)
-        return session_response(user)
+        db().execute('BEGIN IMMEDIATE')
+        mfa=auth_security.enabled(db(),user['id'])
+        if mfa:
+            if not d.get('code'):return jsonify(mfa_required=True)
+            if not auth_security.consume(db(),user['id'],d.get('code'),cipher):raise APIError('Código inválido ou já utilizado.',401)
+        auth_security.event(db(),user['id'],'password_login')
+        return session_response(user,mfa_verified=mfa)
 
     @app.post('/api/auth/logout')
     def logout():
@@ -319,7 +401,7 @@ def create_app(data_dir=None, testing=False):
     @app.get('/api/catalog')
     def get_catalog():
         def build():
-            items=[dict(row) for row in db().execute('SELECT c.*, (SELECT COUNT(*) FROM watch_history h WHERE h.content_id=c.id) AS viewers FROM content c WHERE c.published=1 ORDER BY c.featured DESC,c.created_at')]
+            items=[dict(row) for row in db().execute('SELECT c.*, (SELECT COUNT(*) FROM profile_history h WHERE h.content_id=c.id) AS viewers FROM content c WHERE c.published=1 ORDER BY c.featured DESC,c.created_at')]
             episodes={}
             for row in db().execute('SELECT e.content_id,e.id,e.season,e.number,e.title,e.duration FROM episodes e JOIN content c ON c.id=e.content_id WHERE c.published=1 ORDER BY e.content_id,e.season,e.number'):
                 episode=dict(row)
@@ -333,18 +415,18 @@ def create_app(data_dir=None, testing=False):
     @app.get('/api/library')
     @auth()
     def library():
-        return jsonify(recent_watched=[dict(p) for p in db().execute("SELECT h.content_id,h.watched_at,c.kind FROM watch_history h JOIN content c ON c.id=h.content_id WHERE h.user_id=? AND c.published=1 ORDER BY h.watched_at DESC LIMIT 100",(g.user['id'],))],progress=[dict(p) for p in db().execute('SELECT * FROM progress WHERE user_id=? ORDER BY updated_at DESC',(g.user['id'],))],favorites=[p[0] for p in db().execute('SELECT content_id FROM favorites WHERE user_id=?',(g.user['id'],))],recent_channels=[dict(p) for p in db().execute("SELECT h.content_id,h.watched_at FROM watch_history h JOIN content c ON c.id=h.content_id WHERE h.user_id=? AND c.kind='channel' AND c.published=1 ORDER BY h.watched_at DESC",(g.user['id'],))])
+        return jsonify(recent_watched=[dict(p) for p in db().execute("SELECT h.content_id,h.watched_at,c.kind FROM profile_history h JOIN content c ON c.id=h.content_id WHERE h.profile_id=? AND c.published=1 ORDER BY h.watched_at DESC LIMIT 100",(g.profile['id'],))],progress=[dict(p) for p in db().execute('SELECT * FROM profile_progress WHERE profile_id=? ORDER BY updated_at DESC',(g.profile['id'],))],favorites=[p[0] for p in db().execute('SELECT content_id FROM profile_favorites WHERE profile_id=?',(g.profile['id'],))],recent_channels=[dict(p) for p in db().execute("SELECT h.content_id,h.watched_at FROM profile_history h JOIN content c ON c.id=h.content_id WHERE h.profile_id=? AND c.kind='channel' AND c.published=1 ORDER BY h.watched_at DESC",(g.profile['id'],))])
 
     @app.post('/api/favorites/<cid>')
     @auth()
     def favorite(cid):
         if not db().execute('SELECT 1 FROM content WHERE id=? AND published=1',(cid,)).fetchone():
             raise APIError('Título não encontrado.',404)
-        exists=db().execute('SELECT 1 FROM favorites WHERE user_id=? AND content_id=?',(g.user['id'],cid)).fetchone()
+        exists=db().execute('SELECT 1 FROM profile_favorites WHERE profile_id=? AND content_id=?',(g.profile['id'],cid)).fetchone()
         if exists:
-            db().execute('DELETE FROM favorites WHERE user_id=? AND content_id=?',(g.user['id'],cid))
+            db().execute('DELETE FROM profile_favorites WHERE profile_id=? AND content_id=?',(g.profile['id'],cid))
         else:
-            db().execute('INSERT INTO favorites VALUES(?,?)',(g.user['id'],cid))
+            db().execute('INSERT INTO profile_favorites VALUES(?,?)',(g.profile['id'],cid))
         db().commit()
         return jsonify(saved=not bool(exists))
 
@@ -369,17 +451,19 @@ def create_app(data_dir=None, testing=False):
         item,video=playback_item(cid,eid)
         if not video:
             raise APIError('Este conteúdo ainda não tem vídeo disponível.',404)
-        progress=db().execute('SELECT position,duration FROM progress WHERE user_id=? AND content_id=? AND episode_id=?',(g.user['id'],cid,eid)).fetchone()
+        progress=db().execute('SELECT position,duration FROM profile_progress WHERE profile_id=? AND content_id=? AND episode_id=?',(g.profile['id'],cid,eid)).fetchone()
         if item['sample'] and video == SAMPLE and (ROOT / 'static/assets/sintel-trailer.mp4').exists():
             video = '/static/assets/sintel-trailer.mp4'
-        db().execute('INSERT INTO watch_history VALUES(?,?,?) ON CONFLICT(user_id,content_id) DO UPDATE SET watched_at=excluded.watched_at',(g.user['id'],cid,time.time()))
+        db().execute('INSERT INTO profile_history VALUES(?,?,?) ON CONFLICT(profile_id,content_id) DO UPDATE SET watched_at=excluded.watched_at',(g.profile['id'],cid,time.time()))
         db().commit()
-        return jsonify(url=video,position=progress['position'] if progress else 0,duration=progress['duration'] if progress else 0,live=item['kind']=='channel',sample=bool(item['sample']),diagnostic=automatic_diagnostics(db(),g.user,cid),viewers=db().execute('SELECT COUNT(*) FROM watch_history WHERE content_id=?',(cid,)).fetchone()[0])
+        return jsonify(url=video,position=progress['position'] if progress else 0,duration=progress['duration'] if progress else 0,live=item['kind']=='channel',sample=bool(item['sample']),diagnostic=automatic_diagnostics(db(),g.user,cid),viewers=db().execute('SELECT COUNT(*) FROM profile_history WHERE content_id=?',(cid,)).fetchone()[0])
 
     @app.put('/api/progress/<cid>')
     @auth(paid=True)
     def progress(cid):
         d=data()
+        if d.get('profile_id') and d['profile_id']!=g.profile['id']:
+            raise APIError('O perfil mudou. Selecione o perfil original para sincronizar este progresso.',409)
         eid=str(d.get('episode_id',''))
         item,_=playback_item(cid,eid)
         if item['kind']=='channel':
@@ -387,7 +471,7 @@ def create_app(data_dir=None, testing=False):
         pos,duration,client=float(d.get('position',0)),float(d.get('duration',0)),float(d.get('client_time',0))
         if not all(math.isfinite(x) for x in (pos,duration,client)) or duration<=0 or pos<0 or pos>duration+1 or duration>604800 or client>time.time()*1000+300000:
             raise APIError('Posição de reprodução inválida.')
-        db().execute('INSERT INTO progress VALUES(?,?,?,?,?,?,?) ON CONFLICT(user_id,content_id,episode_id) DO UPDATE SET position=excluded.position,duration=excluded.duration,updated_at=excluded.updated_at,client_time=excluded.client_time WHERE excluded.client_time>=progress.client_time',(g.user['id'],cid,eid,pos,duration,time.time(),client))
+        db().execute('INSERT INTO profile_progress VALUES(?,?,?,?,?,?,?) ON CONFLICT(profile_id,content_id,episode_id) DO UPDATE SET position=excluded.position,duration=excluded.duration,updated_at=excluded.updated_at,client_time=excluded.client_time WHERE excluded.client_time>=profile_progress.client_time',(g.profile['id'],cid,eid,pos,duration,time.time(),client))
         db().commit()
         return jsonify(ok=True)
 
@@ -411,6 +495,8 @@ def create_app(data_dir=None, testing=False):
         d=data()
         coins=0;kind='subscription';plan_id=None;days=0
         if d.get('package_id'):
+            if not community_module.enabled(db()):
+                return community_module.unavailable()
             pack=db().execute('SELECT * FROM coin_packages WHERE id=? AND active=1',(d['package_id'],)).fetchone()
             if not pack:raise APIError('Pacote de moedas indisponível.')
             if d.get('confirm_price')!=pack['price'] or d.get('confirm_coins')!=pack['coins']:raise APIError('O pacote mudou. Confira os valores e confirme novamente.',409)
@@ -642,6 +728,17 @@ def create_app(data_dir=None, testing=False):
         db().commit()
         return jsonify(ok=True)
 
+    @app.route('/api/admin/modules/community',methods=['GET','PUT'])
+    @auth(admin=True)
+    def community_module_settings():
+        if request.method == 'PUT':
+            value = data().get('enabled')
+            if type(value) is not bool:
+                raise APIError('Informe enabled como true ou false.',400)
+            save_setting('community_enabled', 'true' if value else 'false')
+            db().commit()
+        return jsonify(enabled=community_module.enabled(db()))
+
     @app.route('/api/admin/settings',methods=['GET','PUT'])
     @auth(admin=True)
     def settings():
@@ -696,12 +793,18 @@ def create_app(data_dir=None, testing=False):
         html = re.sub(r'<meta name="description"[^>]*>|<title>.*?</title>', '', html)
         html = html.replace('</head>', seo_head(meta) + '\n</head>')
         html = html.replace('<!--SEO_FALLBACK-->', '<noscript><style>#app{display:none}</style>' + seo_fallback(meta) + '</noscript>')
-        response = Response(html, status=200 if meta['public'] or path in ('conta','carteira','lista','continuar','historico') or path.startswith('admin') or path=='comunidade' or re.fullmatch(r'comunidade/espaco/[a-zA-Z0-9_]{3,30}',path) or re.fullmatch(r'comunidade/criar(?:/(?:post|reel|story|movie|series))?',path) or re.fullmatch(r'comunidade/(?:perfil/[a-zA-Z0-9_]{3,24}|(?:sala|post)/[A-Za-z0-9_-]{12})',path) or re.fullmatch(r'sala/[A-Za-z0-9_-]{12}',path) else 404, content_type='text/html; charset=utf-8')
-        response.headers['Cache-Control'] = 'no-cache'
+        response = Response(html, status=200 if meta['public'] or path in ('conta','carteira','lista','continuar','historico','perfis','ativar','escanear') or path.startswith('admin') or path=='comunidade' or re.fullmatch(r'comunidade/espaco/[a-zA-Z0-9_]{3,30}',path) or re.fullmatch(r'comunidade/criar(?:/(?:post|reel|story|movie|series))?',path) or re.fullmatch(r'comunidade/(?:perfil/[a-zA-Z0-9_]{3,24}|(?:sala|post)/[A-Za-z0-9_-]{12})',path) or re.fullmatch(r'sala/[A-Za-z0-9_-]{12}',path) else 404, content_type='text/html; charset=utf-8')
+        response.headers['Cache-Control'] = 'private, no-store, no-cache, max-age=0, must-revalidate'
+        response.headers['CDN-Cache-Control'] = 'no-store'
         if not meta['public']:
             response.headers['X-Robots-Tag'] = 'noindex, nofollow'
         return response
 
+    import account_avatar
+    account_avatar.register(app,db,auth,data,APIError)
+    account_profiles.register(app,db,auth,data,APIError)
+    auth_security.register(app,db,auth,data,APIError,cipher,rate_limit)
+    device_login.register(app,db,auth,data,APIError,rate_limit,session_response,setting)
     register_jump(app, db, auth, data, APIError, playback_item, public_user)
     register_community(app, db, auth, data, APIError)
     import community_experience

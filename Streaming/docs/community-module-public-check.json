@@ -1,0 +1,10 @@
+{
+  "status": "PASS",
+  "release": "modules-20261009a",
+  "community_enabled": true,
+  "public_home": true,
+  "admin_control_asset": true,
+  "anonymous_toggle_rejected": true,
+  "service_worker_updated": true,
+  "page_errors": []
+}

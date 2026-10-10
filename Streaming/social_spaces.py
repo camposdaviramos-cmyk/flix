@@ -66,11 +66,11 @@ def enrich(db,p):
         s=db.execute('SELECT id,kind,name,username,avatar FROM social_spaces WHERE id=?',(p['space_id'],)).fetchone();p['space']=dict(s) if s else None
 
 def groups(db,uid):
-    return [dict(r) for r in db.execute('''SELECT gr.*,m.role,(SELECT COUNT(*) FROM hub_group_members WHERE group_id=gr.id) members,
+    return [dict(r) for r in db.execute('''SELECT * FROM (SELECT gr.*,m.role,(SELECT COUNT(*) FROM hub_group_members WHERE group_id=gr.id) members,
     (SELECT body FROM community_dm WHERE group_id=gr.id AND created_at>=m.joined_at ORDER BY id DESC LIMIT 1) last_message,
     (SELECT MAX(created_at) FROM community_dm WHERE group_id=gr.id AND created_at>=m.joined_at) last_at,
     (SELECT COUNT(*) FROM community_dm WHERE group_id=gr.id AND created_at>=m.joined_at AND sender!=? AND id>COALESCE((SELECT message_id FROM community_dm_reads WHERE user_id=? AND other_id='group:'||gr.id),0)) unread
-    FROM hub_groups gr JOIN hub_group_members m ON m.group_id=gr.id AND m.user_id=? ORDER BY COALESCE(last_at,gr.created_at) DESC''',(uid,uid,uid))]
+    FROM hub_groups gr JOIN hub_group_members m ON m.group_id=gr.id AND m.user_id=?) group_inbox ORDER BY COALESCE(last_at,created_at) DESC''',(uid,uid,uid))]
 
 def group_audio_access(db,aid,uid):
     return db.execute('''SELECT 1 FROM hub_dm_meta x JOIN community_dm d ON d.id=x.message_id JOIN hub_group_members m ON m.group_id=d.group_id AND m.user_id=? WHERE x.attachment_id=? AND d.created_at>=m.joined_at''',(uid,aid)).fetchone()

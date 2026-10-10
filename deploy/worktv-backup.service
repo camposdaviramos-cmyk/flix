@@ -1,0 +1,9 @@
+[Unit]
+Description=WorkTV PostgreSQL local backup
+After=postgresql.service
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /opt/flix/deploy/backup-postgres.py
+UMask=0077
+PrivateTmp=true
+NoNewPrivileges=true

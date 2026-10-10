@@ -1,0 +1,11 @@
+{
+  "tables": 114,
+  "triggers": 40,
+  "invalid_constraints": 0,
+  "schema_version": 1,
+  "access_version": 1,
+  "status": "PASS",
+  "backup_sha256": "8eb628a4535d1271e74b71a71a6e2227a7110d62dd17895c03797de23c918686",
+  "bytes": 832895,
+  "restored_to": "isolated disposable database"
+}

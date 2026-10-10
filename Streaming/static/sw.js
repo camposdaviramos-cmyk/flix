@@ -1,7 +1,7 @@
 'use strict';
 // Cache only public, same-origin UI resources. Never API data, documents or streams.
-const CACHE='flix-shell-worktv-scale-v4',OFFLINE='/static/offline.html';
-const SHELL=[OFFLINE,'/static/offline.js','/static/assets/worktv-icon-192.png','/static/assets/worktv-icon-512.png'];
+const CACHE='flix-shell-worktv-account-v1',OFFLINE='/static/offline.html';
+const SHELL=[OFFLINE,'/static/offline.js','/static/assets/worktv-logo-official-v1.png'];
 self.addEventListener('install',e=>{e.waitUntil(caches.open(CACHE).then(c=>c.addAll(SHELL)).then(()=>self.skipWaiting()));});
 self.addEventListener('activate',e=>{e.waitUntil(Promise.all([caches.keys().then(keys=>Promise.all(keys.filter(k=>k.startsWith('flix-shell-')&&k!==CACHE).map(k=>caches.delete(k)))),self.clients.claim()]));});
 self.addEventListener('fetch',e=>{
@@ -11,8 +11,8 @@ self.addEventListener('fetch',e=>{
    e.respondWith((async()=>{
      let timer;
      try{
-       const response=await Promise.race([fetch(e.request),new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('timeout')),10000);})]);
-       if(response.status>=500)throw Error('unavailable');
+       const response=await Promise.race([fetch(e.request,{cache:'no-store'}),new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('timeout')),10000);})]);
+       if(response.status>=500&&response.headers.get('X-WorkTV-Module')!=='community-disabled')throw Error('unavailable');
        return response;
      }catch(_){return await caches.match(OFFLINE)||Response.error();}
      finally{clearTimeout(timer);}
@@ -41,7 +41,7 @@ self.addEventListener('push',e=>{e.waitUntil((async()=>{
  const expired=d.type==='call_incoming'&&d.expires&&d.expires<Date.now()/1000,incoming=d.type==='call_incoming'&&!expired;
  const data={url:localURL(d.url),id:d.id,type:d.type,callId:d.callId,callType:d.callType,callState:d.callState,expires:d.expires,conversationId:d.conversationId};
  const actions=(incoming?[{action:'answer',title:'Atender'},{action:'decline',title:'Recusar'}]:[{action:'open',title:d.type?.includes('message')?'Abrir conversa':'Abrir WorkTV'}]).slice(0,self.Notification?.maxActions??2);
- let avatar='/static/assets/worktv-icon-192.png';try{const url=new URL(d.icon,self.location.origin);if(url.protocol==='https:'||url.origin===self.location.origin)avatar=url.href;}catch(_){}
+ let avatar='/static/assets/worktv-logo-official-v1.png';try{const url=new URL(d.icon,self.location.origin);if(url.protocol==='https:'||url.origin===self.location.origin)avatar=url.href;}catch(_){}
  const options={body:expired?'A chamada não foi atendida. Abra a conversa para retornar.':d.body||'Confira suas novidades.',icon:avatar,badge:'/static/assets/worktv-badge.png',tag:d.tag||'flix',data,actions,silent:!!d.silent,requireInteraction:incoming,renotify:incoming};
  if(!options.silent)options.vibrate=incoming?[250,100,250,100,250]:[100,60,100];
  await self.registration.showNotification(expired?'Chamada perdida':d.title||'WorkTV',options);

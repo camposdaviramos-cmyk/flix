@@ -1,7 +1,7 @@
 /* Startup recovery is independent of React, effects and the application bundle. */
 (function () {
   'use strict';
-  var release = 'scale-20261008a', ready = false, panel = null, timer, observer;
+  var release = 'account-20261009a', ready = false, panel = null, timer, observer;
   function removePanel() {
     if (panel && panel.parentNode) panel.parentNode.removeChild(panel);
     panel = null;
@@ -36,6 +36,7 @@
   function rendered() {
     var app = document.getElementById('app');
     if (!app || !app.firstElementChild || app.querySelector('[data-worktv-render-failed]')) return;
+    if (!window.WorkTVUI || window.WorkTVUI.release !== release) { fail(); return; }
     ready = true; clearTimeout(timer); removePanel();
     var url = new URL(location.href);
     if (url.searchParams.has('_wt_reload')) { url.searchParams.delete('_wt_reload'); history.replaceState(history.state, '', url.href); }

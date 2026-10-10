@@ -1,0 +1,15 @@
+{
+  "status": "PASS",
+  "existing_avatar_visible_when_disabled": true,
+  "desktop_and_mobile_menu": true,
+  "escape_and_outside_close": true,
+  "header_no_layout_shift": true,
+  "upload_preview_save_persist_remove": true,
+  "community_on_and_off": true,
+  "page_errors": [],
+  "release": "account-20261009a",
+  "sqlite_avatar_tests": 3,
+  "postgres_avatar_tests": 3,
+  "account_access_regression": 10,
+  "community_module_regression": 5
+}

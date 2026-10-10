@@ -16,22 +16,10 @@
   ],
   "icons": [
     {
-      "src": "/static/assets/worktv-icon-192.png",
-      "sizes": "192x192",
-      "type": "image/png",
+      "src": "/static/assets/worktv-official-icon-v1.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
       "purpose": "any"
-    },
-    {
-      "src": "/static/assets/worktv-icon-512.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "any"
-    },
-    {
-      "src": "/static/assets/worktv-maskable.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "maskable"
     }
   ],
   "shortcuts": [
@@ -50,6 +38,10 @@
     {
       "name": "Comunidade",
       "url": "/comunidade"
+    },
+    {
+      "name": "Escanear QR Code",
+      "url": "/escanear"
     }
   ],
   "display_override": [

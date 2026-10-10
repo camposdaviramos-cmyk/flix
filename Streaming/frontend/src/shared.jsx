@@ -1,4 +1,4 @@
-import React, { createContext, useContext } from "react";
+import React, { createContext, useContext, useEffect, useRef, useState } from "react";
 export const AppContext = createContext(null);
 export const useApp = () => useContext(AppContext);
 export const money = (n) =>
@@ -31,16 +31,7 @@ export function Brand() {
   const { s } = useApp();
   return (
     <a className="brand" href="/" aria-label={s.brand + " início"}>
-      <i className="brand-mark" aria-hidden="true" />
-      <span className="brand-name">
-        {s.brand === "WorkTV" ? (
-          <>
-            Work<b>TV</b>
-          </>
-        ) : (
-          s.brand
-        )}
-      </span>
+      <img className="brand-logo" src="/static/assets/worktv-logo-official-v1.png" width="1956" height="804" alt="WorkTV" />
     </a>
   );
 }
@@ -66,9 +57,21 @@ export function Action({
     </button>
   );
 }
+export function AvatarImage({user}) {
+  const [failed,setFailed]=useState(false);
+  useEffect(()=>setFailed(false),[user.avatar]);
+  return user.avatar&&!failed?<img src={user.avatar} alt="" onError={()=>setFailed(true)}/>:String(user.name||'?')[0].toUpperCase();
+}
 export function Header() {
   const { s, path } = useApp();
   const tv = !!window.WorkTVPlatform?.tv;
+  const menu=useRef(null);
+  useEffect(()=>{
+    const outside=e=>{if(menu.current&&!menu.current.contains(e.target))menu.current.open=false;};
+    const escape=e=>{if(e.key==='Escape'&&menu.current?.open){menu.current.open=false;menu.current.querySelector('summary')?.focus();}};
+    document.addEventListener('click',outside);document.addEventListener('keydown',escape);
+    return ()=>{document.removeEventListener('click',outside);document.removeEventListener('keydown',escape);};
+  },[]);
   return (
     <header className="header">
       <div className="container header-inner">
@@ -78,7 +81,7 @@ export function Header() {
             ["/", "Início"],
             ["/filmes", "Filmes"],
             ["/series", "Séries"],
-            ["/comunidade", "Comunidade"],
+            ...(s.modules?.community!==false?[["/comunidade", "Comunidade"]]:[]),
             [
               "/tv",
               <>
@@ -103,6 +106,7 @@ export function Header() {
           </a>
           {s.user ? (
             <>
+              {s.modules?.community!==false && <>
               {tv && (
                 <button
                   className="text-button"
@@ -128,24 +132,23 @@ export function Header() {
                 <Icon name="users" />
                 <span>WorkTV Juntos</span>
               </button>
-              <details className="fs-user-menu">
+              </>}
+              <details ref={menu} className="fs-user-menu wt-account-menu">
                 <summary className="avatar" aria-label="Menu da conta">
-                  {s.user.avatar ? (
-                    <img src={s.user.avatar} alt="" />
-                  ) : (
-                    s.user.name[0]
-                  )}
+                  <AvatarImage user={s.user}/>
                 </summary>
-                <div>
-                  <a href={"/comunidade/perfil/" + s.user.username}>
+                <div onClick={e=>{if(e.target.closest("a,button")&&menu.current)menu.current.open=false;}}>
+                  {s.modules?.community!==false && <a href={"/comunidade/perfil/" + s.user.username}>
                     <Icon name="user" /> Meu perfil
-                  </a>
+                  </a>}
+                  <a href="/escanear"><Icon name="camera" /> Escanear QR Code</a>
+                  <a href="/perfis"><Icon name="users" /> Trocar perfil</a>
                   <a href="/conta">
                     <Icon name="settings" /> Configurações
                   </a>
-                  <button data-hub="preferences">
+                  {s.modules?.community!==false && <button data-hub="preferences">
                     <Icon name="bell" /> Preferências
-                  </button>
+                  </button>}
                   <Action action="logout" className="text-button" icon="logout">
                     Sair
                   </Action>

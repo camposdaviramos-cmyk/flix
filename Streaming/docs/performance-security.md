@@ -86,7 +86,7 @@ SLOs propostos para APIs: erros abaixo de 0,1%, p95 abaixo de 300 ms e p99 abaix
 
 Separar os testes de CDN/mídia (bitrate, origem, segmentos, tempo até primeiro quadro e rebuffering), tempo real (sinalização, TURN/SFU, perdas e reconexões), autenticação em pico, pagamentos idempotentes e operação degradada/failover. Vinte e cinco mil reproduções a 4 Mbps exigem aproximadamente 100 Gbps antes de overhead: entrega de mídia não deve depender deste processo de API.
 
-Prioridades de infraestrutura: PostgreSQL para concorrência de escrita; pool limitado; Redis para limitação/cache/eventos distribuídos; réplicas de API sem estado local de coordenação; CDN/object storage; filas de mídia; observabilidade, alertas, backups e recuperação; TURN/SFU conforme topologia de chamadas. São mudanças ainda pendentes, com migração e validação próprias.
+Prioridades de infraestrutura: PostgreSQL para concorrência de escrita; pool limitado; Redis para limitação/cache/eventos distribuídos; réplicas de API sem estado local de coordenação; CDN/object storage; filas de mídia; observabilidade, alertas, backups e recuperação; TURN/SFU conforme topologia de chamadas. PostgreSQL, pool limitado e Redis foram publicados posteriormente; veja [a migração e os controles de acesso](postgresql-access.md). Os demais itens continuam pendentes de infraestrutura e validação próprias.
 
 ## Fontes técnicas
 

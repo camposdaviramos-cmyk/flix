@@ -1,0 +1,35 @@
+{
+  "status": "PASS",
+  "sqlite": {
+    "executed": 171,
+    "passed": 171
+  },
+  "postgresql": {
+    "executed": 171,
+    "passed": 168,
+    "skipped_sqlite_specific": 3
+  },
+  "browser": {
+    "backend": "postgresql",
+    "qr_phone_to_tv": true,
+    "mfa_enrollment_and_recovery": true,
+    "three_profiles_and_editor": true,
+    "mobile_no_overflow": true,
+    "javascript_errors": 0
+  },
+  "public_site": {
+    "home": true,
+    "qr_720p": true,
+    "private_profiles_require_login": true,
+    "cross_site_request_rejected": true
+  },
+  "redis": {
+    "concurrent_attempts": 80,
+    "accepted": 15,
+    "ttl_verified": true,
+    "unavailable_auth_status": 503,
+    "exhausted_auth_status": 429,
+    "catalog_database_fallback": true
+  },
+  "capacity_25000_certified": false
+}

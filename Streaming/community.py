@@ -161,7 +161,7 @@ def register_community(app, db, auth, data, error):
             if not sp or sp['status']!='active' or (sp['privacy']=='private' and not social_spaces.space_role(db(),r['space_id'],uid()) and g.user['role']!='admin'):raise error('Publicação indisponível.',404)
         return r
 
-    def post_list(where='1',args=(),offset=0,include_own=False,order=None):
+    def post_list(where='1=1',args=(),offset=0,include_own=False,order=None):
         visibility="(p.status='published' OR (p.user_id=? AND p.status IN ('private','archived')))" if include_own else "p.status='published'"
         extra=(uid(),) if include_own else ()
         if include_own and g.user['role']=='admin':visibility="p.status IN ('published','private','archived')";extra=()
@@ -234,7 +234,7 @@ def register_community(app, db, auth, data, error):
             items=post_list('p.space_id=?',(sp['id'],),max(0,int(request.args.get('offset',0))))
             return jsonify(posts=items[:20],more=len(items)>20)
         kind=request.args.get('kind','all');q=request.args.get('q','')[:100];offset=max(0,min(10000,int(request.args.get('offset',0))))
-        where=['1'];args=[]
+        where=['1=1'];args=[]
         if kind=='following':
             where.append('p.user_id IN (SELECT following FROM community_follows WHERE follower=?)');args.append(uid())
         elif kind!='all':
@@ -453,7 +453,7 @@ def register_community(app, db, auth, data, error):
         (SELECT COUNT(*) FROM community_reactions r JOIN community_posts p ON p.id=r.target_id WHERE r.target_type='post' AND p.user_id=u.id AND r.user_id!=u.id AND p.status='published')*2+
         (SELECT COALESCE(SUM(points),0) FROM community_game_results WHERE user_id=u.id) score
         FROM users u LEFT JOIN community_profiles pr ON pr.user_id=u.id WHERE u.status='active' ORDER BY score DESC,u.created_at LIMIT 30""")
-        top=rows("SELECT p.id,p.title,p.poster,p.kind,u.username,COUNT(v.user_id) views FROM community_posts p JOIN users u ON u.id=p.user_id JOIN community_views v ON v.post_id=p.id WHERE p.status='published' AND u.status='active' AND (p.space_id IS NULL OR EXISTS(SELECT 1 FROM social_spaces ss WHERE ss.id=p.space_id AND ss.status='active' AND ss.privacy='public')) AND p.kind IN ('movie','series','channel') GROUP BY p.id ORDER BY views DESC,p.created_at DESC LIMIT 10")
+        top=rows("SELECT p.id,p.title,p.poster,p.kind,u.username,COUNT(v.user_id) views FROM community_posts p JOIN users u ON u.id=p.user_id JOIN community_views v ON v.post_id=p.id WHERE p.status='published' AND u.status='active' AND (p.space_id IS NULL OR EXISTS(SELECT 1 FROM social_spaces ss WHERE ss.id=p.space_id AND ss.status='active' AND ss.privacy='public')) AND p.kind IN ('movie','series','channel') GROUP BY p.id,u.id ORDER BY views DESC,p.created_at DESC LIMIT 10")
         return jsonify(people=people,top=top,games=community_publishing.game_rank(db(),uid()))
 
     @app.route('/api/community/dm/<other>',methods=['GET','POST'])

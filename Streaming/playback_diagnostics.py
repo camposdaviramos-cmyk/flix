@@ -72,18 +72,18 @@ def clean_trace(value):
 
 
 def register_playback_diagnostics(app, db, auth, data, APIError, playback_item):
-    with app.app_context():
-        db().executescript('''
-            CREATE TABLE IF NOT EXISTS playback_diagnostics(
-                id TEXT PRIMARY KEY, user_id TEXT NOT NULL, content_id TEXT NOT NULL,
-                episode_id TEXT NOT NULL, created_at REAL NOT NULL, updated_at REAL NOT NULL,
-                revisions INTEGER NOT NULL, device TEXT NOT NULL, source_host TEXT NOT NULL,
-                source_ref TEXT NOT NULL, trace TEXT NOT NULL);
-            CREATE INDEX IF NOT EXISTS idx_playback_diagnostics_user
-                ON playback_diagnostics(user_id, created_at);
-        ''')
-        db().commit()
-
+    if 'database' not in app.extensions:
+        with app.app_context():
+            db().executescript('''
+                CREATE TABLE IF NOT EXISTS playback_diagnostics(
+                    id TEXT PRIMARY KEY, user_id TEXT NOT NULL, content_id TEXT NOT NULL,
+                    episode_id TEXT NOT NULL, created_at REAL NOT NULL, updated_at REAL NOT NULL,
+                    revisions INTEGER NOT NULL, device TEXT NOT NULL, source_host TEXT NOT NULL,
+                    source_ref TEXT NOT NULL, trace TEXT NOT NULL);
+                CREATE INDEX IF NOT EXISTS idx_playback_diagnostics_user
+                    ON playback_diagnostics(user_id, created_at);
+            ''')
+            db().commit()
     @app.post('/api/player/diagnostics')
     @auth(paid=True)
     def save_diagnostic():

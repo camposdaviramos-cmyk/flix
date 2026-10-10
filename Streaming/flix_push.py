@@ -31,6 +31,10 @@ def public_key(folder):
 
 
 def deliver(db,folder,send=None):
+    import community_module
+    if not community_module.enabled(db):
+        db.commit()
+        return
     if send is None:
         from pywebpush import webpush
         send=webpush
@@ -74,8 +78,10 @@ def register(app):
         lock=(folder/'push-worker.lock').open('a')
         try:fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
         except BlockingIOError:lock.close();return
-        with sqlite3.connect(folder/'vyra.sqlite3',timeout=20) as conn:
-            conn.row_factory=sqlite3.Row;conn.execute('PRAGMA foreign_keys=ON')
+        with app.extensions['connect_db']() as conn:
+            if getattr(conn,'dialect','sqlite')=='postgresql':
+                # Session advisory lock elects one worker across hosts/processes.
+                if not conn.execute('SELECT pg_try_advisory_lock(812301,2)').fetchone()[0]:return
             conn.execute("UPDATE hub_deliveries SET status='pending' WHERE status='sending'");conn.commit()
             cleanup=0
             while True:

@@ -1,6 +1,8 @@
-import React from "react";
+import React, {useState} from "react";
+import {SecuritySettings} from "./access.jsx";
 import {
   useApp,
+  AvatarImage,
   Icon,
   Action,
   Empty,
@@ -56,21 +58,19 @@ export function Account() {
           </span>
         </div>
       )}
+      <section className="surface scanner-entry"><h2>Entrar na TV ou no computador</h2><p>Use este celular para escanear o QR Code da outra tela.</p><a className="btn btn-primary" href="/escanear">Escanear QR Code</a></section>
       <div className="account-grid">
         <section className="surface">
           <div className="profile-heading">
             <span className="avatar">
-              {u.avatar ? (
-                <img src={u.avatar} alt="" />
-              ) : (
-                u.name[0].toUpperCase()
-              )}
+              <AvatarImage user={u}/>
             </span>
             <div>
               <h3>{u.name}</h3>
               <p>{u.email}</p>
             </div>
           </div>
+          <AvatarSettings />
           <span className={"badge " + (u.subscribed ? "green" : "yellow")}>
             {u.role === "admin"
               ? "Administrador"
@@ -78,7 +78,7 @@ export function Account() {
                 ? "Plano ativo"
                 : "Aguardando assinatura"}
           </span>
-          <p className="cm-account-link">
+          {s.modules?.community!==false && <p className="cm-account-link">
             <a className="btn btn-secondary btn-small" href="/carteira">
               🪙 Minha carteira
             </a>
@@ -88,7 +88,7 @@ export function Account() {
             >
               <Icon name="user" /> Meu perfil na comunidade
             </a>
-          </p>
+          </p>}
           <div className="account-sub">
             <h3>
               {u.role === "admin"
@@ -149,6 +149,7 @@ export function Account() {
             </button>
           </form>
         </section>
+        <SecuritySettings/>
         <section className="surface orders-section">
           <h2>Seus pagamentos</h2>
           {orders.length ? (
@@ -254,4 +255,27 @@ export function Legal() {
       </p>
     </main>
   );
+}
+
+function AvatarSettings(){
+  const {s,actions}=useApp();const [busy,setBusy]=useState(false),[message,setMessage]=useState(''),[preview,setPreview]=useState('');
+  async function choose(e){
+    const file=e.target.files?.[0];e.target.value='';if(!file)return;
+    setMessage('');setPreview('');
+    if(!['image/png','image/jpeg','image/webp'].includes(file.type)||file.size>8*1024*1024){setMessage('Escolha uma imagem JPG, PNG ou WebP de até 8 MB.');return;}
+    setBusy(true);const url=URL.createObjectURL(file);
+    try{const image=new Image();image.src=url;await image.decode();const size=Math.min(image.naturalWidth,image.naturalHeight);if(!size)throw Error('Imagem inválida.');
+      const canvas=document.createElement('canvas');canvas.width=canvas.height=256;const ctx=canvas.getContext('2d');ctx.drawImage(image,(image.naturalWidth-size)/2,(image.naturalHeight-size)/2,size,size,0,0,256,256);setPreview(canvas.toDataURL('image/png'));
+    }catch(_){setMessage('Não foi possível abrir essa imagem. Escolha outra foto.');}finally{URL.revokeObjectURL(url);setBusy(false);}
+  }
+  async function save(remove=false){setBusy(true);setMessage('');try{
+    await actions.request('/account/avatar',{method:remove?'DELETE':'PUT',body:remove?{}:{avatar:preview}});setPreview('');await actions.refreshState();await actions.navigate('/conta');
+  }catch(e){setMessage(e.message);}finally{setBusy(false);}}
+  return <section className="account-avatar-editor" aria-label="Alterar avatar"><h3>Foto da conta</h3><p>Altere seu avatar aqui, mesmo com a comunidade desativada.</p>
+    <label htmlFor="account-avatar-file">Escolher foto</label><input id="account-avatar-file" type="file" accept="image/png,image/jpeg,image/webp" onChange={choose} disabled={busy}/>
+    <p>JPG, PNG ou WebP, até 8 MB. A imagem será recortada ao centro.</p>
+    {preview&&<div className="avatar-preview"><img src={preview} alt="Prévia do novo avatar"/><button type="button" className="btn btn-primary btn-small" disabled={busy} onClick={()=>save()}>Salvar avatar</button><button type="button" className="text-button" disabled={busy} onClick={()=>setPreview('')}>Cancelar</button></div>}
+    {s.user.avatar&&<button type="button" className="text-button" disabled={busy} onClick={()=>save(true)}>Remover foto</button>}
+    {busy&&<p role="status">Processando foto…</p>}{message&&<p role="alert">{message}</p>}
+  </section>;
 }

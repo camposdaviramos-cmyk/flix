@@ -130,7 +130,7 @@ def game_rank(db,uid,kind='all'):
       FROM community_game_results r JOIN users u ON u.id=r.user_id
       LEFT JOIN community_profiles p ON p.user_id=u.id
       WHERE u.status='active' AND (?='all' OR r.kind=?)
-      GROUP BY u.id ORDER BY points DESC,wins DESC,games DESC,u.username ASC'''
+      GROUP BY u.id,p.avatar ORDER BY points DESC,wins DESC,games DESC,u.username ASC'''
     ranked=[dict(r) for r in db.execute(query,(kind,kind))]
     for i,u in enumerate(ranked):u['position']=i+1
     return {'leaders':ranked[:5],'me':next((u for u in ranked if u['id']==uid),None),'kind':kind,'total':len(ranked)}

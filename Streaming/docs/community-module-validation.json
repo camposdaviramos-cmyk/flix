@@ -1,0 +1,20 @@
+{
+  "status": "PASS",
+  "admin_toggle": true,
+  "open_tab_update": true,
+  "direct_route_blocked": true,
+  "mobile_navigation_hidden": true,
+  "social_bundles_not_loaded_when_disabled": true,
+  "qr_and_account_available": true,
+  "reenable": true,
+  "page_errors": [],
+  "release": "modules-20261009b",
+  "api_regression_tests": 176,
+  "postgres_module_tests": 5,
+  "sqlite_module_tests": 5,
+  "pwa_recovery": "PASS",
+  "default_community_enabled": true,
+  "control_location": "/admin?tab=settings",
+  "admin_social_navigation_hidden_when_disabled": true,
+  "settings_browser_check": "PASS"
+}

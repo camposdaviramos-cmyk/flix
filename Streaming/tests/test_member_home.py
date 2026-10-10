@@ -11,14 +11,14 @@ class MemberTests(unittest.TestCase):
  def login(self):
   r=self.c.post('/api/auth/login',json={'email':'admin@vyra.local','password':'Test-password-123'},headers=self.headers);self.assertEqual(r.status_code,200)
  def test_history_requires_authorized_play(self):
-  self.assertEqual(self.c.get('/api/play/channel-test').status_code,401);self.assertEqual(self.c.get('/api/library').status_code,401);self.assertEqual(self.db.execute('SELECT COUNT(*) FROM watch_history').fetchone()[0],0)
+  self.assertEqual(self.c.get('/api/play/channel-test').status_code,401);self.assertEqual(self.c.get('/api/library').status_code,401);self.assertEqual(self.db.execute('SELECT COUNT(*) FROM profile_history').fetchone()[0],0)
  def test_recent_channels_are_private_and_deduplicated(self):
   self.login()
   for _ in range(3):self.assertEqual(self.c.get('/api/play/channel-test').status_code,200)
   library=self.c.get('/api/library').json;self.assertEqual([c['content_id'] for c in library['recent_channels']],['channel-test'])
   channel=next(i for i in self.c.get('/api/catalog').json['items'] if i['id']=='channel-test');self.assertEqual(channel['viewers'],1);self.assertNotIn('video_url',channel)
   other=self.app.test_client();r=other.post('/api/auth/register',json={'name':'Outro usuário','email':'other@example.com','password':'Other-password-123','plan_id':'premium'},headers=self.headers);self.assertEqual(r.status_code,200);self.assertEqual(other.get('/api/library').json['recent_channels'],[])
-  self.assertEqual(other.get('/api/play/channel-test').status_code,402);self.assertEqual(self.db.execute('SELECT COUNT(*) FROM watch_history').fetchone()[0],1)
+  self.assertEqual(other.get('/api/play/channel-test').status_code,402);self.assertEqual(self.db.execute('SELECT COUNT(*) FROM profile_history').fetchone()[0],1)
  def test_drafts_are_not_in_history_or_catalog(self):
   self.login();self.c.get('/api/play/channel-test');self.db.execute("UPDATE content SET published=0 WHERE id='channel-test'");self.db.commit()
   self.assertEqual(self.c.get('/api/library').json['recent_channels'],[]);self.assertEqual(self.c.get('/api/play/channel-test').status_code,404);self.assertNotIn('channel-test',[i['id'] for i in self.c.get('/api/catalog').json['items']])

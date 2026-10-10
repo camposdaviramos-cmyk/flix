@@ -1,0 +1,14 @@
+{
+  "release": "access-20261008a",
+  "status": "live",
+  "database": "PostgreSQL",
+  "tables": 113,
+  "triggers": 40,
+  "rows": 573,
+  "source_integrity": "ok",
+  "all_row_digests_equal": true,
+  "maintenance_seconds": 2.93,
+  "backup": "/opt/flix/Streaming/data/backups/postgres-20261008T192115Z",
+  "admin_mfa_required": true,
+  "redis_authentication": true
+}

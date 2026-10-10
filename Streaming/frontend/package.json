@@ -12,6 +12,7 @@
     "node": ">=22"
   },
   "dependencies": {
+    "jsqr": "^1.4.0",
     "react": "19.3.0",
     "react-dom": "19.3.0"
   },
